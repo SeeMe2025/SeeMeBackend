@@ -195,6 +195,7 @@ async function streamOpenAI(
     requestBody.max_completion_tokens = maxTokens
     requestBody.reasoning_effort = 'low'
     requestBody.verbosity = 'low'
+    requestBody.stream_options = { include_usage: true }
   }
 
   if (tools && tools.length > 0) {
