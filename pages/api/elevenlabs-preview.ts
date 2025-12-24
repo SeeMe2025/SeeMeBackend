@@ -25,7 +25,7 @@ export default async function handler(
     }
 
     // Get an active ElevenLabs API key
-    const apiKey = await elevenLabsKeyManager.getActiveKey()
+    const apiKey = await elevenLabsKeyManager.getAvailableKey()
     if (!apiKey) {
       return res.status(503).json({ error: 'No ElevenLabs API keys available' })
     }
@@ -53,9 +53,6 @@ export default async function handler(
     if (!response.ok) {
       throw new Error(`ElevenLabs API error: ${response.statusText}`)
     }
-
-    // Track usage
-    await elevenLabsKeyManager.trackUsage(apiKey, text.length)
 
     // Stream audio back to client
     const audioBuffer = await response.arrayBuffer()

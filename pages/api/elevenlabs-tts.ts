@@ -25,7 +25,7 @@ export default async function handler(
     }
 
     // Get an active ElevenLabs API key
-    const apiKey = await elevenLabsKeyManager.getActiveKey()
+    const apiKey = await elevenLabsKeyManager.getAvailableKey()
     if (!apiKey) {
       return res.status(503).json({ error: 'No ElevenLabs API keys available' })
     }
@@ -57,9 +57,6 @@ export default async function handler(
       const errorText = await response.text()
       throw new Error(`ElevenLabs API error: ${response.statusText} - ${errorText}`)
     }
-
-    // Track usage (count characters)
-    await elevenLabsKeyManager.trackUsage(apiKey, text.length)
 
     // Log TTS usage to Supabase
     try {

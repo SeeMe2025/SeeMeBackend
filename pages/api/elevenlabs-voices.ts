@@ -19,7 +19,7 @@ export default async function handler(
     // No authentication - privacy-first app
 
     // Get an active ElevenLabs API key
-    const apiKey = await elevenLabsKeyManager.getActiveKey()
+    const apiKey = await elevenLabsKeyManager.getAvailableKey()
     if (!apiKey) {
       return res.status(503).json({ error: 'No ElevenLabs API keys available' })
     }
