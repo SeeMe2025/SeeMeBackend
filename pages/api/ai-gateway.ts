@@ -41,19 +41,8 @@ export default async function handler(
   }
 
   try {
-    // Extract user token from Authorization header
-    const authHeader = req.headers.authorization
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Missing or invalid authorization header' })
-    }
-
-    const userToken = authHeader.substring(7)
-
-    // Verify token with Supabase
-    const { data: { user }, error: authError } = await supabase.auth.getUser(userToken)
-    if (authError || !user) {
-      return res.status(401).json({ error: 'Invalid authentication token' })
-    }
+    // No authentication - privacy-first app with local-only users
+    // Backend is just a secure proxy to hide API keys
 
     // Parse request body
     const body: AIGatewayRequest = req.body
@@ -75,9 +64,9 @@ export default async function handler(
     const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(7)}`
     const startTime = Date.now()
 
-    // Log AI request to Supabase
+    // Log AI request to Supabase (userId from context if provided, otherwise anonymous)
     await trackAIRequest({
-      userId: user.id,
+      userId: context.userId || 'anonymous',
       provider,
       model: model || getDefaultModel(provider),
       promptType,
@@ -137,7 +126,7 @@ export default async function handler(
 
     // Log AI response to Supabase
     await trackAIResponse({
-      userId: user.id,
+      userId: context.userId || 'anonymous',
       provider,
       model: model || getDefaultModel(provider),
       promptType,
