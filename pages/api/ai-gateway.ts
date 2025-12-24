@@ -177,10 +177,14 @@ async function streamOpenAI(
     throw new Error('OpenAI API key not configured')
   }
 
+  // Build messages array - only add user message if not empty (summary sends empty message)
   const messages = [
-    ...previousMessages.map(m => ({ role: m.role, content: m.content })),
-    { role: 'user', content: message }
+    ...previousMessages.map(m => ({ role: m.role, content: m.content }))
   ]
+
+  if (message && message.trim().length > 0) {
+    messages.push({ role: 'user', content: message })
+  }
 
   const requestBody: any = {
     model: model || 'gpt-4o',
@@ -310,10 +314,14 @@ async function streamAnthropic(
   const systemMessage = previousMessages.find(m => m.role === 'system')
   const conversationMessages = previousMessages.filter(m => m.role !== 'system')
 
+  // Build messages array - only add user message if not empty (summary sends empty message)
   const messages = [
-    ...conversationMessages.map(m => ({ role: m.role, content: m.content })),
-    { role: 'user', content: message }
+    ...conversationMessages.map(m => ({ role: m.role, content: m.content }))
   ]
+
+  if (message && message.trim().length > 0) {
+    messages.push({ role: 'user', content: message })
+  }
 
   const requestBody: any = {
     model: model || 'claude-3-5-sonnet-20241022',
