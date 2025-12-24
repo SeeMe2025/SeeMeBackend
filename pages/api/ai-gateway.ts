@@ -77,7 +77,7 @@ export default async function handler(
 
     // Set SSE headers
     res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
+      'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
       'Connection': 'keep-alive',
       'X-Accel-Buffering': 'no' // Disable buffering in nginx
