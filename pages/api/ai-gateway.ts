@@ -177,19 +177,24 @@ async function streamOpenAI(
     throw new Error('OpenAI API key not configured')
   }
 
-  // Build messages array - only add user message if not empty (summary sends empty message)
   const messages = [
-    ...previousMessages.map(m => ({ role: m.role, content: m.content }))
+    ...previousMessages.map(m => ({ role: m.role, content: m.content })),
+    { role: 'user', content: message }
   ]
-
-  if (message && message.trim().length > 0) {
-    messages.push({ role: 'user', content: message })
-  }
 
   const requestBody: any = {
     model: model || 'gpt-4o',
     messages,
     stream: true
+  }
+
+  // Add GPT-5 specific parameters (same as old OpenAIService)
+  const modelName = model || 'gpt-4o'
+  if (modelName.startsWith('gpt-5')) {
+    const maxTokens = modelName.includes('nano') ? 4096 : 8192
+    requestBody.max_completion_tokens = maxTokens
+    requestBody.reasoning_effort = 'low'
+    requestBody.verbosity = 'low'
   }
 
   if (tools && tools.length > 0) {
@@ -314,14 +319,10 @@ async function streamAnthropic(
   const systemMessage = previousMessages.find(m => m.role === 'system')
   const conversationMessages = previousMessages.filter(m => m.role !== 'system')
 
-  // Build messages array - only add user message if not empty (summary sends empty message)
   const messages = [
-    ...conversationMessages.map(m => ({ role: m.role, content: m.content }))
+    ...conversationMessages.map(m => ({ role: m.role, content: m.content })),
+    { role: 'user', content: message }
   ]
-
-  if (message && message.trim().length > 0) {
-    messages.push({ role: 'user', content: message })
-  }
 
   const requestBody: any = {
     model: model || 'claude-3-5-sonnet-20241022',
