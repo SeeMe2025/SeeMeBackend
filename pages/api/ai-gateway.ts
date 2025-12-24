@@ -56,7 +56,8 @@ export default async function handler(
       context = {}
     } = body
 
-    if (!message) {
+    // Allow empty message for summary requests (all context is in previousMessages)
+    if (message === undefined || message === null) {
       return res.status(400).json({ error: 'Message is required' })
     }
 
