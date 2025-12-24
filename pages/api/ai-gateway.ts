@@ -95,10 +95,10 @@ export default async function handler(
         tools,
         (chunk) => {
           fullResponse += chunk
-          res.write(`data: ${JSON.stringify({ chunk })}\n\n`)
+          res.write(`data: ${JSON.stringify({ chunk })}\n\n`, 'utf8')
         },
         (toolInvocation) => {
-          res.write(`data: ${JSON.stringify({ toolInvocation })}\n\n`)
+          res.write(`data: ${JSON.stringify({ toolInvocation })}\n\n`, 'utf8')
         }
       )
       tokensUsed = result.tokensUsed
@@ -110,17 +110,17 @@ export default async function handler(
         tools,
         (chunk) => {
           fullResponse += chunk
-          res.write(`data: ${JSON.stringify({ chunk })}\n\n`)
+          res.write(`data: ${JSON.stringify({ chunk })}\n\n`, 'utf8')
         },
         (toolInvocation) => {
-          res.write(`data: ${JSON.stringify({ toolInvocation })}\n\n`)
+          res.write(`data: ${JSON.stringify({ toolInvocation })}\n\n`, 'utf8')
         }
       )
       tokensUsed = result.tokensUsed
     }
 
     // Send completion event
-    res.write(`data: [DONE]\n\n`)
+    res.write(`data: [DONE]\n\n`, 'utf8')
 
     const latencyMs = Date.now() - startTime
 
