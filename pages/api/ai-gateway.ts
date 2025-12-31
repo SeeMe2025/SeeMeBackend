@@ -29,6 +29,101 @@ interface AIGatewayRequest {
     sessionId?: string
     coachId?: string
     featureName?: string
+    deviceId?: string
+    isVoiceMode?: boolean
+    hasTTS?: boolean
+    hasElevenLabsKey?: boolean
+  }
+}
+
+// Rate limiting constants
+const VOICE_LIMIT = 3
+const TEXT_LIMIT = 20
+
+// Rate limiting helper functions
+async function checkAndIncrementRateLimit(
+  deviceId: string,
+  isVoiceMode: boolean,
+  hasElevenLabsKey: boolean
+): Promise<{ allowed: boolean; limitType?: 'voice' | 'text'; used?: number; max?: number }> {
+  try {
+    // Get or create usage record
+    const { data: usage, error: fetchError } = await supabase
+      .from('usage_limits')
+      .select('*')
+      .eq('device_id', deviceId)
+      .single()
+
+    let currentUsage = usage
+
+    // Create record if doesn't exist
+    if (!currentUsage || fetchError) {
+      const { data: newUsage, error: insertError } = await supabase
+        .from('usage_limits')
+        .insert({
+          device_id: deviceId,
+          voice_sessions_count: 0,
+          text_sessions_count: 0,
+          has_elevenlabs_key: hasElevenLabsKey
+        })
+        .select()
+        .single()
+
+      if (insertError) {
+        console.error('Failed to create usage record:', insertError)
+        return { allowed: true } // Fail open on DB errors
+      }
+      currentUsage = newUsage
+    }
+
+    // Check voice mode rate limit
+    if (isVoiceMode) {
+      // Users with ElevenLabs key bypass voice limit
+      if (hasElevenLabsKey) {
+        return { allowed: true }
+      }
+
+      if (currentUsage.voice_sessions_count >= VOICE_LIMIT) {
+        return {
+          allowed: false,
+          limitType: 'voice',
+          used: currentUsage.voice_sessions_count,
+          max: VOICE_LIMIT
+        }
+      }
+
+      // Increment voice count
+      await supabase
+        .from('usage_limits')
+        .update({
+          voice_sessions_count: currentUsage.voice_sessions_count + 1,
+          has_elevenlabs_key: hasElevenLabsKey
+        })
+        .eq('device_id', deviceId)
+
+      return { allowed: true }
+    } else {
+      // Check text mode rate limit (no bypass)
+      if (currentUsage.text_sessions_count >= TEXT_LIMIT) {
+        return {
+          allowed: false,
+          limitType: 'text',
+          used: currentUsage.text_sessions_count,
+          max: TEXT_LIMIT
+        }
+      }
+
+      // Increment text count
+      await supabase
+        .from('usage_limits')
+        .update({ text_sessions_count: currentUsage.text_sessions_count + 1 })
+        .eq('device_id', deviceId)
+
+      return { allowed: true }
+    }
+  } catch (error) {
+    console.error('Rate limit check error:', error)
+    return { allowed: true } // Fail open on errors
   }
 }
 
@@ -59,6 +154,28 @@ export default async function handler(
     // Allow empty message for summary requests (all context is in previousMessages)
     if (message === undefined || message === null) {
       return res.status(400).json({ error: 'Message is required' })
+    }
+
+    // Check rate limits
+    const deviceId = context.deviceId || 'unknown'
+    const isVoiceMode = context.isVoiceMode || context.hasTTS || false
+    const hasElevenLabsKey = context.hasElevenLabsKey || false
+
+    const rateLimitResult = await checkAndIncrementRateLimit(
+      deviceId,
+      isVoiceMode,
+      hasElevenLabsKey
+    )
+
+    if (!rateLimitResult.allowed) {
+      return res.status(429).json({
+        error: rateLimitResult.limitType === 'voice'
+          ? 'Voice session limit reached'
+          : 'Text session limit reached',
+        limitType: rateLimitResult.limitType,
+        used: rateLimitResult.used,
+        max: rateLimitResult.max
+      })
     }
 
     // Generate request ID
