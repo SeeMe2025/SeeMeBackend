@@ -24,15 +24,16 @@ interface AIGatewayRequest {
   provider?: 'openai' | 'anthropic'
   model?: string
   tools?: Tool[]
+  userApiKey?: string // User's own OpenAI/Anthropic API key
   context?: {
     userId?: string
     sessionId?: string
     coachId?: string
     featureName?: string
     deviceId?: string
-    isVoiceMode?: boolean
-    hasTTS?: boolean
-    hasElevenLabsKey?: boolean
+    isVoiceMode?: boolean | string
+    hasTTS?: boolean | string
+    hasElevenLabsKey?: boolean | string
   }
 }
 
@@ -156,26 +157,31 @@ export default async function handler(
       return res.status(400).json({ error: 'Message is required' })
     }
 
-    // Check rate limits
-    const deviceId = context.deviceId || 'unknown'
-    const isVoiceMode = context.isVoiceMode || context.hasTTS || false
-    const hasElevenLabsKey = context.hasElevenLabsKey || false
+    // Check rate limits (skip if user provided their own API key)
+    const userProvidedKey = body.userApiKey && body.userApiKey.trim().length > 0
 
-    const rateLimitResult = await checkAndIncrementRateLimit(
-      deviceId,
-      isVoiceMode,
-      hasElevenLabsKey
-    )
+    if (!userProvidedKey) {
+      const deviceId = context.deviceId || 'unknown'
+      // Parse boolean values (iOS sends as strings)
+      const isVoiceMode = context.isVoiceMode === true || context.isVoiceMode === 'true' || context.hasTTS === true || context.hasTTS === 'true'
+      const hasElevenLabsKey = context.hasElevenLabsKey === true || context.hasElevenLabsKey === 'true'
 
-    if (!rateLimitResult.allowed) {
-      return res.status(429).json({
-        error: rateLimitResult.limitType === 'voice'
-          ? 'Voice session limit reached'
-          : 'Text session limit reached',
-        limitType: rateLimitResult.limitType,
-        used: rateLimitResult.used,
-        max: rateLimitResult.max
-      })
+      const rateLimitResult = await checkAndIncrementRateLimit(
+        deviceId,
+        isVoiceMode,
+        hasElevenLabsKey
+      )
+
+      if (!rateLimitResult.allowed) {
+        return res.status(429).json({
+          error: rateLimitResult.limitType === 'voice'
+            ? 'Voice session limit reached'
+            : 'Text session limit reached',
+          limitType: rateLimitResult.limitType,
+          used: rateLimitResult.used,
+          max: rateLimitResult.max
+        })
+      }
     }
 
     // Generate request ID
@@ -217,7 +223,8 @@ export default async function handler(
         },
         (toolInvocation) => {
           res.write(`data: ${JSON.stringify({ toolInvocation })}\n\n`, 'utf8')
-        }
+        },
+        body.userApiKey // Use user's key if provided
       )
       tokensUsed = result.tokensUsed
     } else if (provider === 'anthropic') {
@@ -232,7 +239,8 @@ export default async function handler(
         },
         (toolInvocation) => {
           res.write(`data: ${JSON.stringify({ toolInvocation })}\n\n`, 'utf8')
-        }
+        },
+        body.userApiKey // Use user's key if provided
       )
       tokensUsed = result.tokensUsed
     }
@@ -288,9 +296,10 @@ async function streamOpenAI(
   model?: string,
   tools?: Tool[],
   onChunk?: (chunk: string) => void,
-  onToolInvocation?: (invocation: any) => void
+  onToolInvocation?: (invocation: any) => void,
+  userApiKey?: string
 ): Promise<{ tokensUsed?: number }> {
-  const apiKey = process.env.OPENAI_API_KEY
+  const apiKey = userApiKey || process.env.OPENAI_API_KEY
   if (!apiKey) {
     throw new Error('OpenAI API key not configured')
   }
@@ -427,9 +436,10 @@ async function streamAnthropic(
   model?: string,
   tools?: Tool[],
   onChunk?: (chunk: string) => void,
-  onToolInvocation?: (invocation: any) => void
+  onToolInvocation?: (invocation: any) => void,
+  userApiKey?: string
 ): Promise<{ tokensUsed?: number }> {
-  const apiKey = process.env.ANTHROPIC_API_KEY
+  const apiKey = userApiKey || process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
     throw new Error('Anthropic API key not configured')
   }
