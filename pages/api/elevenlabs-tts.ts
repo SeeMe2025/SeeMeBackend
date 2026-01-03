@@ -18,7 +18,7 @@ export default async function handler(
   try {
     // No authentication - privacy-first app
 
-    const { voiceId, text, settings } = req.body
+    const { voiceId, text, settings, withTimestamps } = req.body
 
     if (!voiceId || !text) {
       return res.status(400).json({ error: 'voiceId and text are required' })
@@ -36,9 +36,14 @@ export default async function handler(
       similarity_boost: 0.75
     }
 
+    // Use with-timestamps endpoint if requested
+    const endpoint = withTimestamps
+      ? `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/with-timestamps`
+      : `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`
+
     // Request TTS from ElevenLabs
     const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+      endpoint,
       {
         method: 'POST',
         headers: {
@@ -73,10 +78,18 @@ export default async function handler(
       console.error('Failed to log TTS usage:', logError)
     }
 
-    // Stream audio back to client
-    const audioBuffer = await response.arrayBuffer()
-    res.setHeader('Content-Type', 'audio/mpeg')
-    res.send(Buffer.from(audioBuffer))
+    // Handle response based on endpoint type
+    if (withTimestamps) {
+      // with-timestamps endpoint returns JSON with audio_base64 and alignment data
+      const jsonResponse = await response.json()
+      res.setHeader('Content-Type', 'application/json')
+      res.json(jsonResponse)
+    } else {
+      // Regular endpoint returns audio/mpeg directly
+      const audioBuffer = await response.arrayBuffer()
+      res.setHeader('Content-Type', 'audio/mpeg')
+      res.send(Buffer.from(audioBuffer))
+    }
   } catch (error: any) {
     console.error('Error generating TTS:', error)
     res.status(500).json({ error: error.message })
