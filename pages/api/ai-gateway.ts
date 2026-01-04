@@ -324,7 +324,7 @@ async function streamOpenAI(
   if (modelName.startsWith('gpt-5')) {
     const maxTokens = modelName.includes('nano') ? 4096 : 8192
     requestBody.max_completion_tokens = maxTokens
-    requestBody.reasoning_effort = 'low'
+    requestBody.reasoning_effort = 'medium'
     requestBody.stream_options = { include_usage: true }
   }
 
