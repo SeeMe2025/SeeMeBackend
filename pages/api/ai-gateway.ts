@@ -329,14 +329,8 @@ async function streamOpenAI(
   }
 
   if (tools && tools.length > 0) {
-    requestBody.tools = tools.map(tool => ({
-      type: 'function',
-      function: {
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.parameters
-      }
-    }))
+    // Tools are already in correct OpenAI format from iOS (with type: "function" wrapper)
+    requestBody.tools = tools
   }
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
