@@ -325,7 +325,6 @@ async function streamOpenAI(
     const maxTokens = modelName.includes('nano') ? 4096 : 8192
     requestBody.max_completion_tokens = maxTokens
     requestBody.reasoning_effort = 'low'
-    requestBody.verbosity = 'low'
     requestBody.stream_options = { include_usage: true }
   }
 
