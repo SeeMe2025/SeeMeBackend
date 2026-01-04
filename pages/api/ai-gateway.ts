@@ -39,7 +39,7 @@ interface AIGatewayRequest {
 
 // Rate limiting constants
 const VOICE_LIMIT = 3
-const TEXT_LIMIT = 20
+const TEXT_LIMIT = 100
 
 // Rate limiting helper functions
 async function checkAndIncrementRateLimit(
