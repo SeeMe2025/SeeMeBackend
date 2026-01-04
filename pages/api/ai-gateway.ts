@@ -314,13 +314,13 @@ async function streamOpenAI(
     : previousMessages.map(m => ({ role: m.role, content: m.content }))
 
   const requestBody: any = {
-    model: model || 'gpt-4o',
+    model: model || 'gpt-5.1-chat-latest',
     messages,
     stream: true
   }
 
   // Add GPT-5 specific parameters (same as old OpenAIService)
-  const modelName = model || 'gpt-4o'
+  const modelName = model || 'gpt-5.1-chat-latest'
   if (modelName.startsWith('gpt-5')) {
     const maxTokens = modelName.includes('nano') ? 4096 : 8192
     requestBody.max_completion_tokens = maxTokens
@@ -565,7 +565,7 @@ async function streamAnthropic(
 
 // Helper function to get default model
 function getDefaultModel(provider: string): string {
-  return provider === 'openai' ? 'gpt-4o' : 'claude-3-5-sonnet-20241022'
+  return provider === 'openai' ? 'gpt-5.1-chat-latest' : 'claude-3-5-sonnet-20241022'
 }
 
 // Tracking functions
