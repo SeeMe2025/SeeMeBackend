@@ -30,7 +30,7 @@ export default async function handler(
       return res.status(503).json({ error: 'No ElevenLabs API keys available' })
     }
 
-    // Default voice settings
+    // Default voice settings - use provided settings or defaults
     const voiceSettings = settings || {
       stability: 0.5,
       similarity_boost: 0.75
@@ -40,6 +40,9 @@ export default async function handler(
     const endpoint = withTimestamps
       ? `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/with-timestamps`
       : `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`
+
+    // Use turbo model for better performance
+    const modelId = withTimestamps ? 'eleven_turbo_v2_5' : 'eleven_monolingual_v1'
 
     // Request TTS from ElevenLabs
     const response = await fetch(
@@ -52,8 +55,9 @@ export default async function handler(
         },
         body: JSON.stringify({
           text,
-          model_id: 'eleven_monolingual_v1',
-          voice_settings: voiceSettings
+          model_id: modelId,
+          voice_settings: voiceSettings,
+          output_format: 'mp3_44100_128'
         })
       }
     )

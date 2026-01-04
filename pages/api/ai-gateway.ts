@@ -304,10 +304,14 @@ async function streamOpenAI(
     throw new Error('OpenAI API key not configured')
   }
 
-  const messages = [
-    ...previousMessages.map(m => ({ role: m.role, content: m.content })),
-    { role: 'user', content: message }
-  ]
+  // For regeneration requests (affirmation, focuses, capacity), the message is empty
+  // and the actual prompt is in previousMessages. Don't add empty user message.
+  const messages = message.trim().length > 0
+    ? [
+        ...previousMessages.map(m => ({ role: m.role, content: m.content })),
+        { role: 'user', content: message }
+      ]
+    : previousMessages.map(m => ({ role: m.role, content: m.content }))
 
   const requestBody: any = {
     model: model || 'gpt-4o',
@@ -448,10 +452,14 @@ async function streamAnthropic(
   const systemMessage = previousMessages.find(m => m.role === 'system')
   const conversationMessages = previousMessages.filter(m => m.role !== 'system')
 
-  const messages = [
-    ...conversationMessages.map(m => ({ role: m.role, content: m.content })),
-    { role: 'user', content: message }
-  ]
+  // For regeneration requests (affirmation, focuses, capacity), the message is empty
+  // and the actual prompt is in conversationMessages. Don't add empty user message.
+  const messages = message.trim().length > 0
+    ? [
+        ...conversationMessages.map(m => ({ role: m.role, content: m.content })),
+        { role: 'user', content: message }
+      ]
+    : conversationMessages.map(m => ({ role: m.role, content: m.content }))
 
   const requestBody: any = {
     model: model || 'claude-3-5-sonnet-20241022',
