@@ -45,8 +45,14 @@ const TEXT_LIMIT = 20
 async function checkAndIncrementRateLimit(
   deviceId: string,
   isVoiceMode: boolean,
-  hasElevenLabsKey: boolean
+  hasElevenLabsKey: boolean,
+  promptType?: string
 ): Promise<{ allowed: boolean; limitType?: 'voice' | 'text'; used?: number; max?: number }> {
+  // Exempt automatic daily refresh tasks from rate limits
+  const exemptPromptTypes = ['dailyMetrics', 'dailyBoosts']
+  if (promptType && exemptPromptTypes.includes(promptType)) {
+    return { allowed: true }
+  }
   try {
     // Get or create usage record
     const { data: usage, error: fetchError } = await supabase
@@ -169,7 +175,8 @@ export default async function handler(
       const rateLimitResult = await checkAndIncrementRateLimit(
         deviceId,
         isVoiceMode,
-        hasElevenLabsKey
+        hasElevenLabsKey,
+        promptType
       )
 
       if (!rateLimitResult.allowed) {
