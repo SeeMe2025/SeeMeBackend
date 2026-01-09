@@ -1,6 +1,17 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { createClient } from '@supabase/supabase-js'
 
+// Vercel function timeout configuration with Fluid Compute (enabled by default)
+// Hobby: 300s default/max, Pro: 300s default/800s max, Enterprise: 300s default/800s max
+export const config = {
+  maxDuration: 300, // seconds - 5 minutes for all plans with Fluid Compute
+  api: {
+    bodyParser: {
+      sizeLimit: '10mb', // Explicit body size limit for large context
+    },
+  },
+}
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -214,9 +225,17 @@ export default async function handler(
       'X-Accel-Buffering': 'no' // Disable buffering in nginx
     })
 
-    // Stream response
-    let fullResponse = ''
+    // Connection health check - detect client disconnects
+    let isClientConnected = true
+    req.on('close', () => {
+      isClientConnected = false
+      console.log('Client disconnected, stopping stream')
+    })
+
+    // Stream response with array for better memory efficiency
+    const responseChunks: string[] = []
     let tokensUsed: number | undefined
+    let streamAborted = false
 
     if (provider === 'openai') {
       const result = await streamOpenAI(
@@ -225,11 +244,18 @@ export default async function handler(
         model,
         tools,
         (chunk) => {
-          fullResponse += chunk
+          if (!isClientConnected) {
+            streamAborted = true
+            return false // Signal to stop streaming
+          }
+          responseChunks.push(chunk)
           res.write(`data: ${JSON.stringify({ chunk })}\n\n`, 'utf8')
+          return true
         },
         (toolInvocation) => {
-          res.write(`data: ${JSON.stringify({ toolInvocation })}\n\n`, 'utf8')
+          if (isClientConnected) {
+            res.write(`data: ${JSON.stringify({ toolInvocation })}\n\n`, 'utf8')
+          }
         },
         body.userApiKey // Use user's key if provided
       )
@@ -241,23 +267,33 @@ export default async function handler(
         model,
         tools,
         (chunk) => {
-          fullResponse += chunk
+          if (!isClientConnected) {
+            streamAborted = true
+            return false // Signal to stop streaming
+          }
+          responseChunks.push(chunk)
           res.write(`data: ${JSON.stringify({ chunk })}\n\n`, 'utf8')
+          return true
         },
         (toolInvocation) => {
-          res.write(`data: ${JSON.stringify({ toolInvocation })}\n\n`, 'utf8')
+          if (isClientConnected) {
+            res.write(`data: ${JSON.stringify({ toolInvocation })}\n\n`, 'utf8')
+          }
         },
         body.userApiKey // Use user's key if provided
       )
       tokensUsed = result.tokensUsed
     }
 
-    // Send completion event
-    res.write(`data: [DONE]\n\n`, 'utf8')
+    // Send completion event if client still connected
+    if (isClientConnected && !streamAborted) {
+      res.write(`data: [DONE]\n\n`, 'utf8')
+    }
 
     const latencyMs = Date.now() - startTime
+    const fullResponse = responseChunks.join('') // Efficient join at the end
 
-    // Log AI response to Supabase
+    // Log AI response to Supabase (even if client disconnected, for analytics)
     await trackAIResponse({
       userId: context.userId || 'anonymous',
       provider,
@@ -268,7 +304,8 @@ export default async function handler(
       latencyMs,
       fromCache: false,
       requestId,
-      context
+      context,
+      streamAborted
     })
 
     res.end()
@@ -302,7 +339,7 @@ async function streamOpenAI(
   previousMessages: Message[],
   model?: string,
   tools?: Tool[],
-  onChunk?: (chunk: string) => void,
+  onChunk?: (chunk: string) => boolean | void, // Returns false to abort
   onToolInvocation?: (invocation: any) => void,
   userApiKey?: string
 ): Promise<{ tokensUsed?: number }> {
@@ -358,14 +395,25 @@ async function streamOpenAI(
     throw new Error('No response body from OpenAI')
   }
 
-  // Parse SSE stream from OpenAI
+  // Parse SSE stream from OpenAI with timeout protection
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
   let accumulatedToolCall: any = {}
   let toolCallIndex: number | null = null
 
+  // Streaming timeout: 280 seconds (leave 20s buffer for Vercel's 300s limit)
+  const streamTimeout = 280000
+  const startTime = Date.now()
+
   while (true) {
+    // Check timeout
+    if (Date.now() - startTime > streamTimeout) {
+      console.error('Stream timeout exceeded, aborting')
+      await reader.cancel()
+      throw new Error('Stream timeout: Response took too long')
+    }
+
     const { done, value } = await reader.read()
     if (done) break
 
@@ -386,7 +434,12 @@ async function streamOpenAI(
 
           // Handle text chunks
           if (delta.content) {
-            onChunk?.(delta.content)
+            const shouldContinue = onChunk?.(delta.content)
+            if (shouldContinue === false) {
+              // Client disconnected, abort stream
+              await reader.cancel()
+              return { tokensUsed: undefined }
+            }
           }
 
           // Handle tool calls
@@ -439,7 +492,7 @@ async function streamAnthropic(
   previousMessages: Message[],
   model?: string,
   tools?: Tool[],
-  onChunk?: (chunk: string) => void,
+  onChunk?: (chunk: string) => boolean | void, // Returns false to abort
   onToolInvocation?: (invocation: any) => void,
   userApiKey?: string
 ): Promise<{ tokensUsed?: number }> {
@@ -499,13 +552,24 @@ async function streamAnthropic(
     throw new Error('No response body from Anthropic')
   }
 
-  // Parse SSE stream from Anthropic
+  // Parse SSE stream from Anthropic with timeout protection
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
   let accumulatedToolUse: any = {}
 
+  // Streaming timeout: 280 seconds (leave 20s buffer for Vercel's 300s limit)
+  const streamTimeout = 280000
+  const startTime = Date.now()
+
   while (true) {
+    // Check timeout
+    if (Date.now() - startTime > streamTimeout) {
+      console.error('Stream timeout exceeded, aborting')
+      await reader.cancel()
+      throw new Error('Stream timeout: Response took too long')
+    }
+
     const { done, value } = await reader.read()
     if (done) break
 
@@ -522,7 +586,12 @@ async function streamAnthropic(
 
           // Handle text deltas
           if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
-            onChunk?.(parsed.delta.text)
+            const shouldContinue = onChunk?.(parsed.delta.text)
+            if (shouldContinue === false) {
+              // Client disconnected, abort stream
+              await reader.cancel()
+              return { tokensUsed: undefined }
+            }
           }
 
           // Handle tool use start
