@@ -104,9 +104,10 @@ async function checkAndIncrementRateLimit(
     const resetAt = currentUsage.reset_at ? new Date(currentUsage.reset_at) : null
     
     if (!resetAt || now >= resetAt) {
-      // Reset counts and set next reset time
+      // Reset counts and set next reset time to next midnight UTC
       const nextReset = new Date(now)
-      nextReset.setUTCHours(24, 0, 0, 0) // Next midnight UTC
+      nextReset.setUTCDate(nextReset.getUTCDate() + 1)
+      nextReset.setUTCHours(0, 0, 0, 0) // Next midnight UTC
 
       const { data: resetUsage, error: resetError } = await supabase
         .from('usage_limits')
