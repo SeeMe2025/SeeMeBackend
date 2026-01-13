@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS usage_limits (
   voice_sessions_count INT DEFAULT 0 NOT NULL,
   text_sessions_count INT DEFAULT 0 NOT NULL,
   has_elevenlabs_key BOOLEAN DEFAULT false NOT NULL,
+  reset_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '1 day') NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );

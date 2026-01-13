@@ -183,7 +183,9 @@ export default async function handler(
       fromCache: false,
       requestId,
       context,
-      streamAborted
+      streamAborted,
+      messageLength: message.length,
+      previousMessagesCount: previousMessages.length
     })
 
     res.end()
@@ -191,22 +193,47 @@ export default async function handler(
   } catch (error: any) {
     console.error('AI Gateway Streaming Error:', error)
 
-    // Send error event
-    res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`)
+    // Create detailed error response for Swift app
+    const errorResponse = {
+      error: error.message || 'Unknown error occurred',
+      errorType: error.name || 'UnknownError',
+      errorCode: error.code || 'UNKNOWN',
+      provider: req.body.provider || 'unknown',
+      model: req.body.model || 'unknown',
+      promptType: req.body.promptType || 'unknown',
+      requestId: `req_${Date.now()}_error`,
+      timestamp: new Date().toISOString(),
+      // Additional context for debugging
+      context: {
+        messageLength: req.body.message?.length || 0,
+        previousMessagesCount: req.body.previousMessages?.length || 0,
+        hasTools: (req.body.tools?.length || 0) > 0,
+        userId: req.body.context?.userId || 'unknown',
+        sessionId: req.body.context?.sessionId,
+        coachId: req.body.context?.coachId
+      }
+    }
+
+    // Send structured error event to Swift app
+    res.write(`data: ${JSON.stringify(errorResponse)}\n\n`)
     res.end()
 
-    // Log error to Supabase
+    // Log detailed error to Supabase
     try {
       await trackAIError({
         userId: req.body.context?.userId || 'unknown',
         provider: req.body.provider || 'unknown',
+        model: req.body.model || getDefaultModel(req.body.provider || 'openai'),
         promptType: req.body.promptType || 'unknown',
-        errorType: error.name || 'unknown_error',
+        errorType: error.name || 'UnknownError',
         errorMessage: error.message || 'Unknown error occurred',
-        requestId: `req_${Date.now()}_error`
+        errorCode: error.code || 'UNKNOWN',
+        requestId: errorResponse.requestId,
+        context: req.body.context,
+        stackTrace: error.stack?.substring(0, 500) // First 500 chars of stack
       })
     } catch (logError) {
-      console.error('Failed to log error:', logError)
+      console.error('Failed to log error to Supabase:', logError)
     }
   }
 }
@@ -551,14 +578,21 @@ async function trackAIError(data: any) {
     await supabase.from('ai_usage').insert({
       user_id: data.userId,
       provider: data.provider,
+      model: data.model,
       prompt_type: data.promptType,
       error_type: data.errorType,
       error_message: data.errorMessage,
+      error_code: data.errorCode,
       request_id: data.requestId,
+      session_id: data.context?.sessionId,
+      coach_id: data.context?.coachId,
+      feature_name: data.context?.featureName,
       event_type: 'error',
+      // Store additional context as JSON in error_message if needed
+      stack_trace: data.stackTrace,
       created_at: new Date().toISOString()
     })
   } catch (error) {
-    console.error('Failed to track AI error:', error)
+    console.error('Failed to track AI error to Supabase:', error)
   }
 }

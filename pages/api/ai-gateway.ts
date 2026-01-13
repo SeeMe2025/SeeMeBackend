@@ -76,13 +76,18 @@ async function checkAndIncrementRateLimit(
 
     // Create record if doesn't exist
     if (!currentUsage || fetchError) {
+      const now = new Date()
+      const resetAt = new Date(now)
+      resetAt.setUTCHours(24, 0, 0, 0) // Next midnight UTC
+
       const { data: newUsage, error: insertError } = await supabase
         .from('usage_limits')
         .insert({
           device_id: deviceId,
           voice_sessions_count: 0,
           text_sessions_count: 0,
-          has_elevenlabs_key: hasElevenLabsKey
+          has_elevenlabs_key: hasElevenLabsKey,
+          reset_at: resetAt.toISOString()
         })
         .select()
         .single()
@@ -92,6 +97,35 @@ async function checkAndIncrementRateLimit(
         return { allowed: true } // Fail open on DB errors
       }
       currentUsage = newUsage
+    }
+
+    // Check if we need to reset counts (daily reset at midnight UTC)
+    const now = new Date()
+    const resetAt = currentUsage.reset_at ? new Date(currentUsage.reset_at) : null
+    
+    if (!resetAt || now >= resetAt) {
+      // Reset counts and set next reset time
+      const nextReset = new Date(now)
+      nextReset.setUTCHours(24, 0, 0, 0) // Next midnight UTC
+
+      const { data: resetUsage, error: resetError } = await supabase
+        .from('usage_limits')
+        .update({
+          voice_sessions_count: 0,
+          text_sessions_count: 0,
+          reset_at: nextReset.toISOString()
+        })
+        .eq('device_id', deviceId)
+        .select()
+        .single()
+
+      if (resetError) {
+        console.error('Failed to reset usage counts:', resetError)
+        // Continue with existing counts if reset fails
+      } else {
+        currentUsage = resetUsage
+        console.log(`Reset usage counts for device ${deviceId}, next reset: ${nextReset.toISOString()}`)
+      }
     }
 
     // Check voice mode rate limit
@@ -305,7 +339,9 @@ export default async function handler(
       fromCache: false,
       requestId,
       context,
-      streamAborted
+      streamAborted,
+      messageLength: message.length,
+      previousMessagesCount: previousMessages.length
     })
 
     res.end()
@@ -313,22 +349,48 @@ export default async function handler(
   } catch (error: any) {
     console.error('AI Gateway Streaming Error:', error)
 
-    // Send error event
-    res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`)
+    // Create detailed error response for Swift app
+    const errorResponse = {
+      error: error.message || 'Unknown error occurred',
+      errorType: error.name || 'UnknownError',
+      errorCode: error.code || 'UNKNOWN',
+      provider: req.body.provider || 'unknown',
+      model: req.body.model || 'unknown',
+      promptType: req.body.promptType || 'unknown',
+      requestId: `req_${Date.now()}_error`,
+      timestamp: new Date().toISOString(),
+      // Additional context for debugging
+      context: {
+        messageLength: req.body.message?.length || 0,
+        previousMessagesCount: req.body.previousMessages?.length || 0,
+        hasTools: (req.body.tools?.length || 0) > 0,
+        userId: req.body.context?.userId || 'anonymous',
+        sessionId: req.body.context?.sessionId,
+        coachId: req.body.context?.coachId,
+        isVoiceMode: req.body.context?.isVoiceMode || req.body.context?.hasTTS || false
+      }
+    }
+
+    // Send structured error event to Swift app
+    res.write(`data: ${JSON.stringify(errorResponse)}\n\n`)
     res.end()
 
-    // Log error to Supabase
+    // Log detailed error to Supabase
     try {
       await trackAIError({
-        userId: req.body.context?.userId || 'unknown',
+        userId: req.body.context?.userId || 'anonymous',
         provider: req.body.provider || 'unknown',
+        model: req.body.model || getDefaultModel(req.body.provider || 'openai'),
         promptType: req.body.promptType || 'unknown',
-        errorType: error.name || 'unknown_error',
+        errorType: error.name || 'UnknownError',
         errorMessage: error.message || 'Unknown error occurred',
-        requestId: `req_${Date.now()}_error`
+        errorCode: error.code || 'UNKNOWN',
+        requestId: errorResponse.requestId,
+        context: req.body.context,
+        stackTrace: error.stack?.substring(0, 500) // First 500 chars of stack
       })
     } catch (logError) {
-      console.error('Failed to log error:', logError)
+      console.error('Failed to log error to Supabase:', logError)
     }
   }
 }
@@ -686,14 +748,21 @@ async function trackAIError(data: any) {
     await supabase.from('ai_usage').insert({
       user_id: data.userId,
       provider: data.provider,
+      model: data.model,
       prompt_type: data.promptType,
       error_type: data.errorType,
       error_message: data.errorMessage,
+      error_code: data.errorCode,
       request_id: data.requestId,
+      session_id: data.context?.sessionId,
+      coach_id: data.context?.coachId,
+      feature_name: data.context?.featureName,
       event_type: 'error',
+      // Store additional context as JSON in error_message if needed
+      stack_trace: data.stackTrace,
       created_at: new Date().toISOString()
     })
   } catch (error) {
-    console.error('Failed to track AI error:', error)
+    console.error('Failed to track AI error to Supabase:', error)
   }
 }
