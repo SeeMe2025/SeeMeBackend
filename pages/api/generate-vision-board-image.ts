@@ -33,7 +33,7 @@ export default async function handler(
     await supabase.from('ai_usage').insert({
       user_id: 'anonymous',
       provider: 'gemini',
-      model: 'imagen-4.0-generate-001',
+      model: 'imagen-4.0-fast-generate-001',
       prompt_type: 'vision_board_generation',
       message_length: prompt.length,
       request_id: requestId,
@@ -42,7 +42,7 @@ export default async function handler(
     })
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict`,
+      `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-fast-generate-001:predict`,
       {
         method: 'POST',
         headers: {
@@ -90,7 +90,7 @@ export default async function handler(
     await supabase.from('ai_usage').insert({
       user_id: 'anonymous',
       provider: 'gemini',
-      model: 'imagen-4.0-generate-001',
+      model: 'imagen-4.0-fast-generate-001',
       prompt_type: 'vision_board_generation',
       latency_ms: latencyMs,
       request_id: requestId,
