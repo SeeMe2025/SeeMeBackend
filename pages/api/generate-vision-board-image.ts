@@ -15,7 +15,7 @@ export default async function handler(
   }
 
   try {
-    const { prompt } = req.body
+    const { prompt, aspectRatio = '9:16' } = req.body
 
     if (!prompt) {
       return res.status(400).json({ error: 'prompt is required' })
@@ -33,7 +33,7 @@ export default async function handler(
     await supabase.from('ai_usage').insert({
       user_id: 'anonymous',
       provider: 'gemini',
-      model: 'gemini-2.5-flash-image',
+      model: 'imagen-3.0-generate-002',
       prompt_type: 'vision_board_generation',
       message_length: prompt.length,
       request_id: requestId,
@@ -42,7 +42,7 @@ export default async function handler(
     })
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent`,
+      `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:generateImages`,
       {
         method: 'POST',
         headers: {
@@ -50,11 +50,11 @@ export default async function handler(
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: prompt
-            }]
-          }]
+          prompt: prompt,
+          config: {
+            aspectRatio: aspectRatio,
+            numberOfImages: 1
+          }
         })
       }
     )
@@ -70,7 +70,7 @@ export default async function handler(
     await supabase.from('ai_usage').insert({
       user_id: 'anonymous',
       provider: 'gemini',
-      model: 'gemini-2.5-flash-image',
+      model: 'imagen-3.0-generate-002',
       prompt_type: 'vision_board_generation',
       latency_ms: latencyMs,
       request_id: requestId,
