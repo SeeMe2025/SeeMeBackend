@@ -42,7 +42,7 @@ export default async function handler(
     })
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:generateImages`,
+      `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict`,
       {
         method: 'POST',
         headers: {
@@ -50,21 +50,41 @@ export default async function handler(
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          prompt: prompt,
-          config: {
-            aspectRatio: aspectRatio,
-            numberOfImages: 1
+          instances: [
+            {
+              prompt: prompt
+            }
+          ],
+          parameters: {
+            sampleCount: 1,
+            aspectRatio: aspectRatio
           }
         })
       }
     )
 
     if (!response.ok) {
-      const error = await response.json()
-      throw new Error(`Gemini API error: ${error.error?.message || response.statusText}`)
+      const errorText = await response.text()
+      console.error('Gemini API error response:', errorText)
+      let errorMessage = response.statusText
+      try {
+        const error = JSON.parse(errorText)
+        errorMessage = error.error?.message || errorMessage
+      } catch (e) {
+        // If JSON parsing fails, use the text as is
+      }
+      throw new Error(`Gemini API error: ${errorMessage}`)
     }
 
-    const data = await response.json()
+    const responseText = await response.text()
+    let data
+    try {
+      data = JSON.parse(responseText)
+    } catch (e) {
+      console.error('Failed to parse response:', responseText)
+      throw new Error('Invalid JSON response from Gemini API')
+    }
+
     const latencyMs = Date.now() - startTime
 
     await supabase.from('ai_usage').insert({
@@ -78,10 +98,11 @@ export default async function handler(
       created_at: new Date().toISOString()
     })
 
-    const imagePart = data.candidates?.[0]?.content?.parts?.find((part: any) => part.inlineData)
-    const imageBase64 = imagePart?.inlineData?.data
+    // Imagen :predict API returns predictions array with bytesBase64Encoded
+    const imageBase64 = data.predictions?.[0]?.bytesBase64Encoded
 
     if (!imageBase64) {
+      console.error('Unexpected response structure:', JSON.stringify(data))
       throw new Error('No image generated')
     }
 
