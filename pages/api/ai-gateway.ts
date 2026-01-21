@@ -23,9 +23,15 @@ interface Message {
 }
 
 interface Tool {
-  name: string
-  description: string
-  parameters: any
+  name?: string
+  description?: string
+  parameters?: any
+  // OpenAI format has tools wrapped in a function object
+  function?: {
+    name: string
+    description: string
+    parameters: any
+  }
 }
 
 interface AIGatewayRequest {
@@ -589,11 +595,15 @@ async function streamAnthropic(
   }
 
   if (tools && tools.length > 0) {
-    requestBody.tools = tools.map(tool => ({
-      name: tool.name,
-      description: tool.description,
-      input_schema: tool.parameters
-    }))
+    requestBody.tools = tools.map(tool => {
+      // Handle both OpenAI format (nested function) and direct format
+      const toolData = tool.function || tool
+      return {
+        name: toolData.name,
+        description: toolData.description,
+        input_schema: toolData.parameters
+      }
+    })
   }
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
