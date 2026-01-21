@@ -65,7 +65,7 @@ const BANNED_DEVICES: string[] = [
 ]
 
 const BANNED_USERS: string[] = [
-  '3ab1a756', // User: Nigga - abusing API
+  '3ab1a756-cb96-49b0-b585-0f10efe631c1', // User: Nigga - abusing API
 ]
 
 // Rate limiting helper functions
