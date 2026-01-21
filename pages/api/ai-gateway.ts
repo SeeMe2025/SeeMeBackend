@@ -56,7 +56,7 @@ interface AIGatewayRequest {
 
 // Rate limiting constants
 const VOICE_LIMIT = 3
-const TEXT_LIMIT = 100
+const TEXT_LIMIT = 20
 
 // Rate limiting helper functions
 async function checkAndIncrementRateLimit(
@@ -182,7 +182,13 @@ async function checkAndIncrementRateLimit(
     }
   } catch (error) {
     console.error('Rate limit check error:', error)
-    return { allowed: true } // Fail open on errors
+    // Fail closed on errors to prevent abuse
+    return { 
+      allowed: false, 
+      limitType: 'text',
+      used: 0,
+      max: TEXT_LIMIT
+    }
   }
 }
 
@@ -219,7 +225,15 @@ export default async function handler(
     const userProvidedKey = body.userApiKey && body.userApiKey.trim().length > 0
 
     if (!userProvidedKey) {
-      const deviceId = context.deviceId || 'unknown'
+      // Require deviceId for rate limiting - reject if missing
+      const deviceId = context.deviceId
+      if (!deviceId || deviceId.trim().length === 0) {
+        return res.status(400).json({ 
+          error: 'Device ID is required for rate limiting',
+          details: 'Please update your app to the latest version'
+        })
+      }
+
       // Parse boolean values (iOS sends as strings)
       const isVoiceMode = context.isVoiceMode === true || context.isVoiceMode === 'true' || context.hasTTS === true || context.hasTTS === 'true'
       const hasElevenLabsKey = context.hasElevenLabsKey === true || context.hasElevenLabsKey === 'true'
