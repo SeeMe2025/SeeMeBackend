@@ -97,13 +97,13 @@ async function checkAndIncrementRateLimit(
 
   // Check if device is banned
   if (BANNED_DEVICES.includes(deviceId)) {
-    console.log(`🚫 Banned device attempted access: ${deviceId}`)
+    console.log(`🚫 Banned device attempted access - Device: ${deviceId}, IP: ${clientIP}, User: ${userId || 'unknown'}`)
     return { allowed: false, limitType: 'text', used: 0, max: 0, banned: true }
   }
   
   // Check if user is banned
   if (userId && BANNED_USERS.includes(userId)) {
-    console.log(`🚫 Banned user attempted access: ${userId}`)
+    console.log(`🚫 Banned user attempted access - User: ${userId}, IP: ${clientIP}, Device: ${deviceId}`)
     return { allowed: false, limitType: 'text', used: 0, max: 0, banned: true }
   }
 
