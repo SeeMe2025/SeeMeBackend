@@ -60,28 +60,50 @@ const TEXT_LIMIT = 20
 
 // Banned users/devices list - add deviceIds or userIds here to ban
 const BANNED_DEVICES: string[] = [
-  // Add banned device IDs here, e.g.:
-  // '12345678-1234-1234-1234-123456789abc'
+  'D0758F58-C953-40F7-9533-9DBBC4FB5FCB', // Device used by repeat abuser (Nigger/Gay Jew Boy Nigga)
 ]
 
 const BANNED_USERS: string[] = [
-  '3ab1a756-cb96-49b0-b585-0f10efe631c1', // User: Nigga - abusing API
+  '3ab1a756-cb96-49b0-b585-0f10efe631c1', // User: Nigga - abusing API (deleted account)
+  '4d6dc8e7-21b6-43dd-bd04-38a21124d8d2', // User: Gay Jew Boy Nigga - same abuser, new account
+]
+
+// Banned IPs - add IP addresses here to ban
+const BANNED_IPS: string[] = [
+  // IPs will be added when we detect repeat offenders
 ]
 
 // Rate limiting helper functions
+// Helper to get client IP from request
+function getClientIP(req: NextApiRequest): string {
+  const forwarded = req.headers['x-forwarded-for']
+  const ip = forwarded ? (typeof forwarded === 'string' ? forwarded.split(',')[0] : forwarded[0]) : req.socket.remoteAddress
+  return ip || 'unknown'
+}
+
 async function checkAndIncrementRateLimit(
   deviceId: string,
   isVoiceMode: boolean,
   hasElevenLabsKey: boolean,
   promptType?: string,
-  userId?: string
+  userId?: string,
+  clientIP?: string
 ): Promise<{ allowed: boolean; limitType?: 'voice' | 'text'; used?: number; max?: number; banned?: boolean }> {
-  // Check if user or device is banned
+  // Check if IP is banned
+  if (clientIP && BANNED_IPS.includes(clientIP)) {
+    console.log(`🚫 Banned IP attempted access: ${clientIP}`)
+    return { allowed: false, limitType: 'text', used: 0, max: 0, banned: true }
+  }
+
+  // Check if device is banned
   if (BANNED_DEVICES.includes(deviceId)) {
+    console.log(`🚫 Banned device attempted access: ${deviceId}`)
     return { allowed: false, limitType: 'text', used: 0, max: 0, banned: true }
   }
   
+  // Check if user is banned
   if (userId && BANNED_USERS.includes(userId)) {
+    console.log(`🚫 Banned user attempted access: ${userId}`)
     return { allowed: false, limitType: 'text', used: 0, max: 0, banned: true }
   }
 
@@ -258,12 +280,16 @@ export default async function handler(
       const isVoiceMode = context.isVoiceMode === true || context.isVoiceMode === 'true' || context.hasTTS === true || context.hasTTS === 'true'
       const hasElevenLabsKey = context.hasElevenLabsKey === true || context.hasElevenLabsKey === 'true'
 
+      // Get client IP for IP-based banning
+      const clientIP = getClientIP(req)
+
       const rateLimitResult = await checkAndIncrementRateLimit(
         deviceId,
         isVoiceMode,
         hasElevenLabsKey,
         promptType,
-        context.userId
+        context.userId,
+        clientIP
       )
 
       if (!rateLimitResult.allowed) {
