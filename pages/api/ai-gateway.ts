@@ -58,13 +58,33 @@ interface AIGatewayRequest {
 const VOICE_LIMIT = 3
 const TEXT_LIMIT = 20
 
+// Banned users/devices list - add deviceIds or userIds here to ban
+const BANNED_DEVICES: string[] = [
+  // Add banned device IDs here, e.g.:
+  // '12345678-1234-1234-1234-123456789abc'
+]
+
+const BANNED_USERS: string[] = [
+  '3ab1a756', // User: Nigga - abusing API
+]
+
 // Rate limiting helper functions
 async function checkAndIncrementRateLimit(
   deviceId: string,
   isVoiceMode: boolean,
   hasElevenLabsKey: boolean,
-  promptType?: string
-): Promise<{ allowed: boolean; limitType?: 'voice' | 'text'; used?: number; max?: number }> {
+  promptType?: string,
+  userId?: string
+): Promise<{ allowed: boolean; limitType?: 'voice' | 'text'; used?: number; max?: number; banned?: boolean }> {
+  // Check if user or device is banned
+  if (BANNED_DEVICES.includes(deviceId)) {
+    return { allowed: false, limitType: 'text', used: 0, max: 0, banned: true }
+  }
+  
+  if (userId && BANNED_USERS.includes(userId)) {
+    return { allowed: false, limitType: 'text', used: 0, max: 0, banned: true }
+  }
+
   // Exempt automatic daily refresh tasks from rate limits
   const exemptPromptTypes = ['dailyMetrics', 'dailyBoosts']
   if (promptType && exemptPromptTypes.includes(promptType)) {
@@ -242,10 +262,19 @@ export default async function handler(
         deviceId,
         isVoiceMode,
         hasElevenLabsKey,
-        promptType
+        promptType,
+        context.userId
       )
 
       if (!rateLimitResult.allowed) {
+        // Check if user is banned
+        if (rateLimitResult.banned) {
+          return res.status(403).json({
+            error: 'Access denied',
+            details: 'Your account has been suspended for violating our terms of service'
+          })
+        }
+        
         return res.status(429).json({
           error: rateLimitResult.limitType === 'voice'
             ? 'Voice session limit reached'
