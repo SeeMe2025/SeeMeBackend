@@ -39,7 +39,7 @@ export default async function handler(
 
     if (deviceError) {
       console.error('Error fetching device data:', deviceError);
-      return res.status(500).json({ error: 'Failed to fetch device data' });
+      return res.status(500).json({ error: 'Failed to fetch device data', details: deviceError.message });
     }
 
     const bannedAt = new Date().toISOString();
@@ -92,7 +92,7 @@ export default async function handler(
 
     if (userBanError) {
       console.error('Error banning user:', userBanError);
-      return res.status(500).json({ error: 'Failed to ban user' });
+      return res.status(500).json({ error: 'Failed to ban user', details: userBanError.message });
     }
 
     return res.status(200).json({
@@ -105,8 +105,8 @@ export default async function handler(
       }
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Ban user error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: 'Internal server error', details: error?.message });
   }
 }
