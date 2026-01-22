@@ -58,7 +58,7 @@ interface AIGatewayRequest {
 const VOICE_LIMIT = 3
 const TEXT_LIMIT = 20
 
-// Banned users/devices list - add deviceIds or userIds here to ban
+// Hardcoded banned users/devices list - KEEP THIS for active threats
 const BANNED_DEVICES: string[] = [
   'D0758F58-C953-40F7-9533-9DBBC4FB5FCB', // Device used by repeat abuser (Nigger/Gay Jew Boy Nigga)
   '2B0779F3-5542-41C7-9663-7ABA3609BF61', // Device used by repeat abuser (jewish circumcised boy)
@@ -92,17 +92,41 @@ async function checkAndIncrementRateLimit(
   userId?: string,
   clientIP?: string
 ): Promise<{ allowed: boolean; limitType?: 'voice' | 'text'; used?: number; max?: number; banned?: boolean }> {
-  // Check if IP is banned
+  // Check hardcoded IP bans (for active threats)
   if (clientIP && BANNED_IPS.includes(clientIP)) {
-    console.log(`🚫 Banned IP attempted access: ${clientIP}`)
+    console.log(`🚫 Banned IP attempted access (hardcoded): ${clientIP}`)
     return { allowed: false, limitType: 'text', used: 0, max: 0, banned: true }
   }
 
-  // Check if device is banned
+  // Check database IP bans
+  if (clientIP) {
+    try {
+      const { data: ipBan } = await supabase
+        .from('banned_ips')
+        .select('ip_address')
+        .eq('ip_address', clientIP)
+        .single()
+      
+      if (ipBan) {
+        console.log(`🚫 Banned IP attempted access (database): ${clientIP}`)
+        await supabase.from('banned_access_attempts').insert({
+          device_id: deviceId,
+          user_id: userId || null,
+          ip_address: clientIP,
+          ban_type: 'ip',
+          attempted_at: new Date().toISOString()
+        })
+        return { allowed: false, limitType: 'text', used: 0, max: 0, banned: true }
+      }
+    } catch (e) {
+      console.error('Error checking IP ban:', e)
+    }
+  }
+
+  // Check hardcoded device bans (for active threats)
   if (BANNED_DEVICES.includes(deviceId)) {
-    console.log(`🚫 Banned device attempted access - Device: ${deviceId}, IP: ${clientIP}, User: ${userId || 'unknown'}`)
+    console.log(`🚫 Banned device attempted access (hardcoded) - Device: ${deviceId}, IP: ${clientIP}, User: ${userId || 'unknown'}`)
     
-    // Log to Supabase for permanent record
     try {
       await supabase.from('banned_access_attempts').insert({
         device_id: deviceId,
@@ -117,12 +141,36 @@ async function checkAndIncrementRateLimit(
     
     return { allowed: false, limitType: 'text', used: 0, max: 0, banned: true }
   }
-  
-  // Check if user is banned
-  if (userId && BANNED_USERS.includes(userId)) {
-    console.log(`🚫 Banned user attempted access - User: ${userId}, IP: ${clientIP}, Device: ${deviceId}`)
+
+  // Check database device bans
+  try {
+    const { data: deviceBan } = await supabase
+      .from('banned_devices')
+      .select('device_id')
+      .eq('device_id', deviceId)
+      .single()
     
-    // Log to Supabase for permanent record
+    if (deviceBan) {
+      console.log(`🚫 Banned device attempted access (database) - Device: ${deviceId}, IP: ${clientIP}, User: ${userId || 'unknown'}`)
+      
+      await supabase.from('banned_access_attempts').insert({
+        device_id: deviceId,
+        user_id: userId || null,
+        ip_address: clientIP,
+        ban_type: 'device',
+        attempted_at: new Date().toISOString()
+      })
+      
+      return { allowed: false, limitType: 'text', used: 0, max: 0, banned: true }
+    }
+  } catch (e) {
+    console.error('Error checking device ban:', e)
+  }
+  
+  // Check hardcoded user bans (for active threats)
+  if (userId && BANNED_USERS.includes(userId)) {
+    console.log(`🚫 Banned user attempted access (hardcoded) - User: ${userId}, IP: ${clientIP}, Device: ${deviceId}`)
+    
     try {
       await supabase.from('banned_access_attempts').insert({
         device_id: deviceId,
@@ -136,6 +184,33 @@ async function checkAndIncrementRateLimit(
     }
     
     return { allowed: false, limitType: 'text', used: 0, max: 0, banned: true }
+  }
+
+  // Check database user bans
+  if (userId) {
+    try {
+      const { data: userBan } = await supabase
+        .from('banned_users')
+        .select('user_id')
+        .eq('user_id', userId)
+        .single()
+      
+      if (userBan) {
+        console.log(`🚫 Banned user attempted access (database) - User: ${userId}, IP: ${clientIP}, Device: ${deviceId}`)
+        
+        await supabase.from('banned_access_attempts').insert({
+          device_id: deviceId,
+          user_id: userId,
+          ip_address: clientIP,
+          ban_type: 'user',
+          attempted_at: new Date().toISOString()
+        })
+        
+        return { allowed: false, limitType: 'text', used: 0, max: 0, banned: true }
+      }
+    } catch (e) {
+      console.error('Error checking user ban:', e)
+    }
   }
 
   // Exempt automatic daily refresh tasks from rate limits
