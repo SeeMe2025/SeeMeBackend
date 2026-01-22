@@ -73,6 +73,7 @@ const BANNED_USERS: string[] = [
 // Banned IPs - add IP addresses here to ban
 const BANNED_IPS: string[] = [
   // IPs will be added when we detect repeat offenders
+  '99.25.48.67'
 ]
 
 // Rate limiting helper functions
