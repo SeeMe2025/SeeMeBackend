@@ -154,9 +154,9 @@ async function checkAndIncrementRateLimit(
         .eq('user_id', userId)
         .single()
       
-      if (userLimit?.is_flagged && userLimit.custom_rate_limit !== null) {
+      if (userLimit && userLimit.custom_rate_limit !== null) {
         customLimit = userLimit.custom_rate_limit
-        console.log(`⚠️ Flagged user ${userId} has custom limit: ${customLimit}`)
+        console.log(`⚙️ User ${userId} has custom limit: ${customLimit}`)
       }
     }
     
@@ -385,16 +385,18 @@ export default async function handler(
     const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(7)}`
     const startTime = Date.now()
 
-    // Log AI request to Supabase (userId from context if provided, otherwise anonymous)
-    await trackAIRequest({
-      userId: context.userId || 'anonymous',
-      provider,
-      model: model || getDefaultModel(provider),
-      promptType,
-      messageLength: message.length,
-      requestId,
-      context
-    })
+    // Log AI request to Supabase (only if userId is provided - foreign key constraint)
+    if (context.userId) {
+      await trackAIRequest({
+        userId: context.userId,
+        provider,
+        model: model || getDefaultModel(provider),
+        promptType,
+        messageLength: message.length,
+        requestId,
+        context
+      })
+    }
 
     // Set SSE headers
     res.writeHead(200, {
@@ -472,22 +474,24 @@ export default async function handler(
     const latencyMs = Date.now() - startTime
     const fullResponse = responseChunks.join('') // Efficient join at the end
 
-    // Log AI response to Supabase (even if client disconnected, for analytics)
-    await trackAIResponse({
-      userId: context.userId || 'anonymous',
-      provider,
-      model: model || getDefaultModel(provider),
-      promptType,
-      responseLength: fullResponse.length,
-      tokensUsed,
-      latencyMs,
-      fromCache: false,
-      requestId,
-      context,
-      streamAborted,
-      messageLength: message.length,
-      previousMessagesCount: previousMessages.length
-    })
+    // Log AI response to Supabase (only if userId is provided - foreign key constraint)
+    if (context.userId) {
+      await trackAIResponse({
+        userId: context.userId,
+        provider,
+        model: model || getDefaultModel(provider),
+        promptType,
+        responseLength: fullResponse.length,
+        tokensUsed,
+        latencyMs,
+        fromCache: false,
+        requestId,
+        context,
+        streamAborted,
+        messageLength: message.length,
+        previousMessagesCount: previousMessages.length
+      })
+    }
 
     res.end()
 
@@ -520,22 +524,26 @@ export default async function handler(
     res.write(`data: ${JSON.stringify(errorResponse)}\n\n`)
     res.end()
 
-    // Log detailed error to Supabase
-    try {
-      await trackAIError({
-        userId: req.body.context?.userId || 'anonymous',
-        provider: req.body.provider || 'unknown',
-        model: req.body.model || getDefaultModel(req.body.provider || 'openai'),
-        promptType: req.body.promptType || 'unknown',
-        errorType: error.name || 'UnknownError',
-        errorMessage: error.message || 'Unknown error occurred',
-        errorCode: error.code || 'UNKNOWN',
-        requestId: errorResponse.requestId,
-        context: req.body.context,
-        stackTrace: error.stack?.substring(0, 500) // First 500 chars of stack
-      })
-    } catch (logError) {
-      console.error('Failed to log error to Supabase:', logError)
+    // Log detailed error to Supabase (only if userId is provided - foreign key constraint)
+    if (req.body.context?.userId) {
+      try {
+        await trackAIError({
+          userId: req.body.context.userId,
+          provider: req.body.provider || 'unknown',
+          model: req.body.model || getDefaultModel(req.body.provider || 'openai'),
+          promptType: req.body.promptType || 'unknown',
+          errorMessage: error.message,
+          errorCode: error.code || 'UNKNOWN',
+          errorType: error.name || 'UnknownError',
+          stackTrace: error.stack,
+          requestId: errorResponse.requestId,
+          context: req.body.context
+        })
+      } catch (trackError) {
+        console.error('Failed to track error to Supabase:', trackError)
+      }
+    } else {
+      console.warn('Skipping error tracking - no userId provided')
     }
   }
 }
