@@ -331,6 +331,26 @@ export default async function handler(
       // Get client IP for IP-based banning
       const clientIP = getClientIP(req)
 
+      // Track device and IP for all users (helps identify repeat offenders)
+      if (context.userId) {
+        try {
+          await supabase
+            .from('device_tracking')
+            .upsert({
+              user_id: context.userId,
+              device_id: deviceId,
+              ip_address: clientIP,
+              last_seen_at: new Date().toISOString()
+            }, {
+              onConflict: 'user_id,device_id',
+              ignoreDuplicates: false
+            })
+        } catch (trackError) {
+          console.error('Failed to track device:', trackError)
+          // Don't block request if tracking fails
+        }
+      }
+
       const rateLimitResult = await checkAndIncrementRateLimit(
         deviceId,
         isVoiceMode,

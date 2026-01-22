@@ -17,6 +17,26 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// Banned users/devices/IPs - keep in sync with ai-gateway.ts
+const BANNED_DEVICES: string[] = [
+  'D0758F58-C953-40F7-9533-9DBBC4FB5FCB',
+  '2B0779F3-5542-41C7-9663-7ABA3609BF61',
+]
+
+const BANNED_USERS: string[] = [
+  '3ab1a756-cb96-49b0-b585-0f10efe631c1',
+  '4d6dc8e7-21b6-43dd-bd04-38a21124d8d2',
+  '3787eb48-5be0-49eb-9c97-58c6201cc074',
+]
+
+const BANNED_IPS: string[] = []
+
+function getClientIP(req: NextApiRequest): string {
+  const forwarded = req.headers['x-forwarded-for']
+  const ip = forwarded ? (typeof forwarded === 'string' ? forwarded.split(',')[0] : forwarded[0]) : req.socket.remoteAddress
+  return ip || 'unknown'
+}
+
 interface Message {
   role: 'user' | 'assistant' | 'system'
   content: string
@@ -46,6 +66,9 @@ interface AIGatewayRequest {
     sessionId?: string
     coachId?: string
     featureName?: string
+    deviceId?: string
+    isVoiceMode?: boolean | string
+    hasElevenLabsKey?: boolean | string
   }
 }
 
@@ -86,6 +109,45 @@ export default async function handler(
 
     if (!message) {
       return res.status(400).json({ error: 'Message is required' })
+    }
+
+    // Get client IP and device ID
+    const clientIP = getClientIP(req)
+    const deviceId = context.deviceId || 'unknown'
+
+    // Check bans
+    if (BANNED_IPS.includes(clientIP)) {
+      console.log(`🚫 Banned IP attempted streaming access: ${clientIP}`)
+      return res.status(403).json({ error: 'Access denied' })
+    }
+
+    if (deviceId !== 'unknown' && BANNED_DEVICES.includes(deviceId)) {
+      console.log(`🚫 Banned device attempted streaming access - Device: ${deviceId}, IP: ${clientIP}`)
+      return res.status(403).json({ error: 'Access denied' })
+    }
+
+    if (BANNED_USERS.includes(user.id)) {
+      console.log(`🚫 Banned user attempted streaming access - User: ${user.id}, IP: ${clientIP}`)
+      return res.status(403).json({ error: 'Access denied' })
+    }
+
+    // Track device and IP
+    if (deviceId !== 'unknown') {
+      try {
+        await supabase
+          .from('device_tracking')
+          .upsert({
+            user_id: user.id,
+            device_id: deviceId,
+            ip_address: clientIP,
+            last_seen_at: new Date().toISOString()
+          }, {
+            onConflict: 'user_id,device_id',
+            ignoreDuplicates: false
+          })
+      } catch (trackError) {
+        console.error('Failed to track device:', trackError)
+      }
     }
 
     // Generate request ID
