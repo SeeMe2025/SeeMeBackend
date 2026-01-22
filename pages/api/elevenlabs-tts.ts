@@ -27,8 +27,10 @@ export default async function handler(
     // Use user's API key if provided, otherwise use shared pool
     let apiKey: string
     if (userApiKey && userApiKey.trim().length > 0) {
+      console.log('✅ Using user-provided API key:', userApiKey.substring(0, 10) + '...')
       apiKey = userApiKey
     } else {
+      console.log('⚠️ No user API key provided, using shared pool')
       apiKey = await elevenLabsKeyManager.getAvailableKey()
       if (!apiKey) {
         return res.status(503).json({ error: 'No ElevenLabs API keys available' })

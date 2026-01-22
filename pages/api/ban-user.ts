@@ -31,6 +31,8 @@ export default async function handler(
       return res.status(400).json({ error: 'User ID is required' });
     }
 
+    console.log('Ban request for user:', userId);
+
     // Get user's device tracking data to ban IP and device
     const { data: deviceData, error: deviceError } = await supabase
       .from('device_tracking')
@@ -42,12 +44,15 @@ export default async function handler(
       return res.status(500).json({ error: 'Failed to fetch device data', details: deviceError.message });
     }
 
+    console.log('Found device data:', deviceData?.length || 0, 'records');
+
     const bannedAt = new Date().toISOString();
     const banReason = reason || 'Banned by admin';
 
     // Ban all IPs associated with this user
     const uniqueIPs = [...new Set(deviceData?.map(d => d.ip_address).filter(Boolean) || [])];
     if (uniqueIPs.length > 0) {
+      console.log('Banning IPs:', uniqueIPs);
       const ipBans = uniqueIPs.map(ip => ({
         ip_address: ip,
         reason: banReason,
@@ -60,12 +65,14 @@ export default async function handler(
 
       if (ipBanError) {
         console.error('Error banning IPs:', ipBanError);
+        return res.status(500).json({ error: 'Failed to ban IPs', details: ipBanError.message });
       }
     }
 
     // Ban all devices associated with this user
     const uniqueDevices = [...new Set(deviceData?.map(d => d.device_id).filter(Boolean) || [])];
     if (uniqueDevices.length > 0) {
+      console.log('Banning devices:', uniqueDevices);
       const deviceBans = uniqueDevices.map(deviceId => ({
         device_id: deviceId,
         reason: banReason,
@@ -78,10 +85,12 @@ export default async function handler(
 
       if (deviceBanError) {
         console.error('Error banning devices:', deviceBanError);
+        return res.status(500).json({ error: 'Failed to ban devices', details: deviceBanError.message });
       }
     }
 
     // Ban the user ID
+    console.log('Banning user ID:', userId);
     const { error: userBanError } = await supabase
       .from('banned_users')
       .upsert({
@@ -95,6 +104,7 @@ export default async function handler(
       return res.status(500).json({ error: 'Failed to ban user', details: userBanError.message });
     }
 
+    console.log('Ban successful');
     return res.status(200).json({
       success: true,
       message: 'User banned successfully',
