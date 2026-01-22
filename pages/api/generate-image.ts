@@ -70,6 +70,26 @@ export default async function handler(
       return res.status(403).json({ error: 'Access denied' })
     }
 
+    // Track device and IP for all users
+    if (userId) {
+      try {
+        await supabase
+          .from('device_tracking')
+          .upsert({
+            user_id: userId,
+            device_id: deviceId,
+            ip_address: clientIP,
+            last_seen_at: new Date().toISOString()
+          }, {
+            onConflict: 'user_id,device_id',
+            ignoreDuplicates: false
+          })
+      } catch (trackError) {
+        console.error('Failed to track device:', trackError)
+        // Don't block request if tracking fails
+      }
+    }
+
     // Check rate limit for image generation
     const { data: usage } = await supabase
       .from('usage_limits')
