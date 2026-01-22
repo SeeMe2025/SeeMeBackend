@@ -542,18 +542,19 @@ function getDefaultModel(provider: string): string {
 // Tracking functions
 async function trackAIRequest(data: any) {
   try {
-    await supabase.from('ai_usage').insert({
+    await supabase.from('ai_interactions').insert({
       user_id: data.userId,
       provider: data.provider,
       model: data.model,
       prompt_type: data.promptType,
+      interaction_type: data.promptType || 'conversation',
       message_length: data.messageLength,
       request_id: data.requestId,
       session_id: data.context?.sessionId,
       coach_id: data.context?.coachId,
       feature_name: data.context?.featureName,
-      event_type: 'request',
-      created_at: new Date().toISOString()
+      status: 'pending',
+      timestamp: new Date().toISOString()
     })
   } catch (error) {
     console.error('Failed to track AI request:', error)
@@ -562,21 +563,23 @@ async function trackAIRequest(data: any) {
 
 async function trackAIResponse(data: any) {
   try {
-    await supabase.from('ai_usage').insert({
+    await supabase.from('ai_interactions').insert({
       user_id: data.userId,
       provider: data.provider,
       model: data.model,
       prompt_type: data.promptType,
+      interaction_type: data.promptType || 'conversation',
       response_length: data.responseLength,
       tokens_used: data.tokensUsed,
-      latency_ms: data.latencyMs,
+      response_time_ms: data.latencyMs,
       from_cache: data.fromCache,
+      stream_aborted: data.streamAborted || false,
       request_id: data.requestId,
       session_id: data.context?.sessionId,
       coach_id: data.context?.coachId,
       feature_name: data.context?.featureName,
-      event_type: 'response',
-      created_at: new Date().toISOString()
+      status: 'success',
+      timestamp: new Date().toISOString()
     })
   } catch (error) {
     console.error('Failed to track AI response:', error)
@@ -585,22 +588,22 @@ async function trackAIResponse(data: any) {
 
 async function trackAIError(data: any) {
   try {
-    await supabase.from('ai_usage').insert({
+    await supabase.from('ai_interactions').insert({
       user_id: data.userId,
       provider: data.provider,
       model: data.model,
       prompt_type: data.promptType,
-      error_type: data.errorType,
+      interaction_type: data.promptType || 'conversation',
       error_message: data.errorMessage,
       error_code: data.errorCode,
+      error_category: data.errorType,
+      stack_trace: data.stackTrace,
       request_id: data.requestId,
       session_id: data.context?.sessionId,
       coach_id: data.context?.coachId,
       feature_name: data.context?.featureName,
-      event_type: 'error',
-      // Store additional context as JSON in error_message if needed
-      stack_trace: data.stackTrace,
-      created_at: new Date().toISOString()
+      status: 'error',
+      timestamp: new Date().toISOString()
     })
   } catch (error) {
     console.error('Failed to track AI error to Supabase:', error)

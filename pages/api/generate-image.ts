@@ -34,15 +34,16 @@ export default async function handler(
     const requestId = `img_${Date.now()}_${Math.random().toString(36).substring(7)}`
 
     // Log image generation request
-    await supabase.from('ai_usage').insert({
+    await supabase.from('ai_interactions').insert({
       user_id: 'anonymous',
       provider: 'openai',
       model: 'dall-e-3',
       prompt_type: 'image_generation',
+      interaction_type: 'image_generation',
       message_length: prompt.length,
       request_id: requestId,
-      event_type: 'request',
-      created_at: new Date().toISOString()
+      status: 'pending',
+      timestamp: new Date().toISOString()
     })
 
     // Call OpenAI DALL-E API
@@ -71,15 +72,16 @@ export default async function handler(
     const latencyMs = Date.now() - startTime
 
     // Log image generation response
-    await supabase.from('ai_usage').insert({
+    await supabase.from('ai_interactions').insert({
       user_id: 'anonymous',
       provider: 'openai',
       model: 'dall-e-3',
       prompt_type: 'image_generation',
-      latency_ms: latencyMs,
+      interaction_type: 'image_generation',
+      response_time_ms: latencyMs,
       request_id: requestId,
-      event_type: 'response',
-      created_at: new Date().toISOString()
+      status: 'success',
+      timestamp: new Date().toISOString()
     })
 
     res.status(200).json({
@@ -92,11 +94,13 @@ export default async function handler(
 
     // Log error
     try {
-      await supabase.from('ai_usage').insert({
+      await supabase.from('ai_interactions').insert({
         user_id: 'anonymous',
         provider: 'openai',
+        model: 'dall-e-3',
         prompt_type: 'image_generation',
-        error_type: error.name || 'unknown_error',
+        interaction_type: 'image_generation',
+        error_category: error.name || 'unknown_error',
         error_message: error.message || 'Unknown error occurred',
         event_type: 'error',
         created_at: new Date().toISOString()

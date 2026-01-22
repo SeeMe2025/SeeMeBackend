@@ -61,11 +61,13 @@ const TEXT_LIMIT = 20
 // Banned users/devices list - add deviceIds or userIds here to ban
 const BANNED_DEVICES: string[] = [
   'D0758F58-C953-40F7-9533-9DBBC4FB5FCB', // Device used by repeat abuser (Nigger/Gay Jew Boy Nigga)
+  '2B0779F3-5542-41C7-9663-7ABA3609BF61', // Device used by repeat abuser (jewish circumcised boy)
 ]
 
 const BANNED_USERS: string[] = [
   '3ab1a756-cb96-49b0-b585-0f10efe631c1', // User: Nigga - abusing API (deleted account)
   '4d6dc8e7-21b6-43dd-bd04-38a21124d8d2', // User: Gay Jew Boy Nigga - same abuser, new account
+  '3787eb48-5be0-49eb-9c97-58c6201cc074', // User: jewish circumcised boy - same abuser, 3rd account
 ]
 
 // Banned IPs - add IP addresses here to ban
@@ -98,12 +100,40 @@ async function checkAndIncrementRateLimit(
   // Check if device is banned
   if (BANNED_DEVICES.includes(deviceId)) {
     console.log(`🚫 Banned device attempted access - Device: ${deviceId}, IP: ${clientIP}, User: ${userId || 'unknown'}`)
+    
+    // Log to Supabase for permanent record
+    try {
+      await supabase.from('banned_access_attempts').insert({
+        device_id: deviceId,
+        user_id: userId || null,
+        ip_address: clientIP,
+        ban_type: 'device',
+        attempted_at: new Date().toISOString()
+      })
+    } catch (e) {
+      console.error('Failed to log banned attempt:', e)
+    }
+    
     return { allowed: false, limitType: 'text', used: 0, max: 0, banned: true }
   }
   
   // Check if user is banned
   if (userId && BANNED_USERS.includes(userId)) {
     console.log(`🚫 Banned user attempted access - User: ${userId}, IP: ${clientIP}, Device: ${deviceId}`)
+    
+    // Log to Supabase for permanent record
+    try {
+      await supabase.from('banned_access_attempts').insert({
+        device_id: deviceId,
+        user_id: userId,
+        ip_address: clientIP,
+        ban_type: 'user',
+        attempted_at: new Date().toISOString()
+      })
+    } catch (e) {
+      console.error('Failed to log banned attempt:', e)
+    }
+    
     return { allowed: false, limitType: 'text', used: 0, max: 0, banned: true }
   }
 
@@ -112,7 +142,23 @@ async function checkAndIncrementRateLimit(
   if (promptType && exemptPromptTypes.includes(promptType)) {
     return { allowed: true }
   }
+  
   try {
+    // Check if user is flagged with custom rate limit
+    let customLimit: number | null = null
+    if (userId) {
+      const { data: userLimit } = await supabase
+        .from('user_limits')
+        .select('is_flagged, custom_rate_limit')
+        .eq('user_id', userId)
+        .single()
+      
+      if (userLimit?.is_flagged && userLimit.custom_rate_limit !== null) {
+        customLimit = userLimit.custom_rate_limit
+        console.log(`⚠️ Flagged user ${userId} has custom limit: ${customLimit}`)
+      }
+    }
+    
     // Get or create usage record
     const { data: usage, error: fetchError } = await supabase
       .from('usage_limits')
@@ -204,13 +250,15 @@ async function checkAndIncrementRateLimit(
 
       return { allowed: true }
     } else {
-      // Check text mode rate limit (no bypass)
-      if (currentUsage.text_sessions_count >= TEXT_LIMIT) {
+      // Check text mode rate limit (use custom limit for flagged users)
+      const effectiveLimit = customLimit !== null ? customLimit : TEXT_LIMIT
+      
+      if (currentUsage.text_sessions_count >= effectiveLimit) {
         return {
           allowed: false,
           limitType: 'text',
           used: currentUsage.text_sessions_count,
-          max: TEXT_LIMIT
+          max: effectiveLimit
         }
       }
 
@@ -782,18 +830,19 @@ function getDefaultModel(provider: string): string {
 // Tracking functions
 async function trackAIRequest(data: any) {
   try {
-    await supabase.from('ai_usage').insert({
+    await supabase.from('ai_interactions').insert({
       user_id: data.userId,
       provider: data.provider,
       model: data.model,
       prompt_type: data.promptType,
+      interaction_type: data.promptType || 'conversation',
       message_length: data.messageLength,
       request_id: data.requestId,
       session_id: data.context?.sessionId,
       coach_id: data.context?.coachId,
       feature_name: data.context?.featureName,
-      event_type: 'request',
-      created_at: new Date().toISOString()
+      status: 'pending',
+      timestamp: new Date().toISOString()
     })
   } catch (error) {
     console.error('Failed to track AI request:', error)
@@ -802,21 +851,23 @@ async function trackAIRequest(data: any) {
 
 async function trackAIResponse(data: any) {
   try {
-    await supabase.from('ai_usage').insert({
+    await supabase.from('ai_interactions').insert({
       user_id: data.userId,
       provider: data.provider,
       model: data.model,
       prompt_type: data.promptType,
+      interaction_type: data.promptType || 'conversation',
       response_length: data.responseLength,
       tokens_used: data.tokensUsed,
-      latency_ms: data.latencyMs,
+      response_time_ms: data.latencyMs,
       from_cache: data.fromCache,
+      stream_aborted: data.streamAborted || false,
       request_id: data.requestId,
       session_id: data.context?.sessionId,
       coach_id: data.context?.coachId,
       feature_name: data.context?.featureName,
-      event_type: 'response',
-      created_at: new Date().toISOString()
+      status: 'success',
+      timestamp: new Date().toISOString()
     })
   } catch (error) {
     console.error('Failed to track AI response:', error)
@@ -825,22 +876,22 @@ async function trackAIResponse(data: any) {
 
 async function trackAIError(data: any) {
   try {
-    await supabase.from('ai_usage').insert({
+    await supabase.from('ai_interactions').insert({
       user_id: data.userId,
       provider: data.provider,
       model: data.model,
       prompt_type: data.promptType,
-      error_type: data.errorType,
+      interaction_type: data.promptType || 'conversation',
       error_message: data.errorMessage,
       error_code: data.errorCode,
+      error_category: data.errorType,
+      stack_trace: data.stackTrace,
       request_id: data.requestId,
       session_id: data.context?.sessionId,
       coach_id: data.context?.coachId,
       feature_name: data.context?.featureName,
-      event_type: 'error',
-      // Store additional context as JSON in error_message if needed
-      stack_trace: data.stackTrace,
-      created_at: new Date().toISOString()
+      status: 'error',
+      timestamp: new Date().toISOString()
     })
   } catch (error) {
     console.error('Failed to track AI error to Supabase:', error)

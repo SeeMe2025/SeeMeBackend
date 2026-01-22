@@ -30,15 +30,16 @@ export default async function handler(
 
     const requestId = `vb_${Date.now()}_${Math.random().toString(36).substring(7)}`
 
-    await supabase.from('ai_usage').insert({
+    await supabase.from('ai_interactions').insert({
       user_id: 'anonymous',
       provider: 'gemini',
       model: 'imagen-4.0-fast-generate-001',
       prompt_type: 'vision_board_generation',
+      interaction_type: 'vision_board_generation',
       message_length: prompt.length,
       request_id: requestId,
-      event_type: 'request',
-      created_at: new Date().toISOString()
+      status: 'pending',
+      timestamp: new Date().toISOString()
     })
 
     const response = await fetch(
@@ -87,15 +88,16 @@ export default async function handler(
 
     const latencyMs = Date.now() - startTime
 
-    await supabase.from('ai_usage').insert({
+    await supabase.from('ai_interactions').insert({
       user_id: 'anonymous',
       provider: 'gemini',
       model: 'imagen-4.0-fast-generate-001',
       prompt_type: 'vision_board_generation',
-      latency_ms: latencyMs,
+      interaction_type: 'vision_board_generation',
+      response_time_ms: latencyMs,
       request_id: requestId,
-      event_type: 'response',
-      created_at: new Date().toISOString()
+      status: 'success',
+      timestamp: new Date().toISOString()
     })
 
     // Imagen :predict API returns predictions array with bytesBase64Encoded
@@ -114,10 +116,13 @@ export default async function handler(
     console.error('Error generating vision board image:', error)
 
     try {
-      await supabase.from('ai_usage').insert({
+      await supabase.from('ai_interactions').insert({
         user_id: 'anonymous',
         provider: 'gemini',
+        model: 'imagen-4.0-fast-generate-001',
         prompt_type: 'vision_board_generation',
+        interaction_type: 'vision_board_generation',
+        status: 'error',
         error_type: error.name || 'unknown_error',
         error_message: error.message || 'Unknown error occurred',
         event_type: 'error',

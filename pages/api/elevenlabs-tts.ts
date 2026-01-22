@@ -41,8 +41,8 @@ export default async function handler(
       ? `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/with-timestamps`
       : `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`
 
-    // Use turbo model for better performance
-    const modelId = withTimestamps ? 'eleven_turbo_v2_5' : 'eleven_monolingual_v1'
+    // Use turbo model for all requests (eleven_monolingual_v1 deprecated from free tier)
+    const modelId = 'eleven_turbo_v2_5'
 
     // Request TTS from ElevenLabs
     const response = await fetch(
@@ -69,10 +69,12 @@ export default async function handler(
 
     // Log TTS usage to Supabase
     try {
-      await supabase.from('ai_usage').insert({
+      await supabase.from('ai_interactions').insert({
         user_id: 'anonymous',
         provider: 'elevenlabs',
-        model: 'eleven_monolingual_v1',
+        model: modelId,
+        interaction_type: 'tts',
+        status: 'success',
         prompt_type: 'tts',
         message_length: text.length,
         event_type: 'tts_request',
