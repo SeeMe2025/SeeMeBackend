@@ -170,17 +170,132 @@ SELECT * FROM banned_users_detailed
 ORDER BY banned_at DESC;
 ```
 
-## Next Steps
+## Dashboard UI Components
 
-To fully integrate the ban system into your app:
+### UserBanStatus Component
+Located at: `seemedash-v2/components/UserBanStatus.tsx`
 
-1. **Add Ban Checks**: Update your authentication flow to check if a user/device/IP is banned before allowing access
+Displays the current ban status of a user with:
+- **If Banned**: Shows ban reason, timestamp, banned devices/IPs count, and unban button
+- **If Not Banned**: Shows active status with device/IP counts and ban button
 
-2. **Track Devices**: Ensure your iOS app sends device ID and IP address to the backend for tracking
+**Usage**:
+```tsx
+<UserBanStatus userId="user-uuid-here" userName="User Display Name" />
+```
 
-3. **Monitor Bans**: Use the `banned_users_detailed` view in your dashboard to monitor banned users
+### UnbanUserButton Component
+Located at: `seemedash-v2/components/UnbanUserButton.tsx`
 
-4. **Handle Ban Attempts**: Log and alert on repeated access attempts from banned users (stored in `banned_access_attempts`)
+Standalone unban button with confirmation dialog.
+
+**Usage**:
+```tsx
+<UnbanUserButton userId="user-uuid-here" userName="User Display Name" />
+```
+
+## API Endpoints
+
+### POST `/api/ban-user`
+Ban a user and all associated devices/IPs (see above for details)
+
+### POST `/api/unban-user`
+**Purpose**: Unban a user and remove all associated device/IP bans
+
+**Request Body**:
+```json
+{
+  "userId": "string (required)"
+}
+```
+
+**Success Response** (200):
+```json
+{
+  "success": true,
+  "message": "User unbanned successfully",
+  "unbanned": {
+    "userId": "user-id",
+    "ips": 2,
+    "devices": 1
+  }
+}
+```
+
+### GET `/api/check-ban-status`
+**Purpose**: Check if a user is banned and get detailed ban information
+
+**Query Parameters**:
+- `userId` (string, required): The user ID to check
+
+**Success Response** (200):
+```json
+{
+  "isBanned": true,
+  "banDetails": {
+    "reason": "Abuse",
+    "bannedAt": "2026-01-22T21:00:00.000Z",
+    "bannedBy": "admin@example.com",
+    "notes": "Repeat offender"
+  },
+  "bannedDevices": ["device-id-1"],
+  "bannedIPs": ["192.168.1.1"],
+  "totalDevices": 2,
+  "totalIPs": 3
+}
+```
+
+## iOS App Integration
+
+### Device Tracking
+Located at: `SeeMeUI/Services/SupabaseService.swift`
+
+**On User Creation** (lines 406-431):
+- Inserts initial device tracking record with device ID and IP
+
+**On Every App Launch** (lines 345-373):
+- Updates `last_seen_at` timestamp in `device_tracking` table
+- Upserts device ID and current IP address
+- Ensures the table stays current for accurate ban enforcement
+
+This means the `device_tracking` table is **always up to date** with:
+- Latest IP addresses users are connecting from
+- Last time each device was seen
+- Complete history of all devices/IPs per user
+
+## Complete Ban Flow
+
+1. **iOS App Launch** → `SupabaseService.checkAuthStatus()` updates `device_tracking` table
+2. **Dashboard Admin** → Views user, clicks ban button
+3. **Ban API** → Queries `device_tracking`, creates records in `banned_users`, `banned_devices`, `banned_ips`
+4. **User Tries API Call** → `ai-gateway.ts` checks both hardcoded lists AND database tables
+5. **Request Blocked** → Logged to `banned_access_attempts` table
+6. **Dashboard Shows** → `UserBanStatus` component displays ban details with unban option
+
+## Monitoring & Analytics
+
+### View Banned Users
+```sql
+SELECT * FROM banned_users_detailed 
+ORDER BY banned_at DESC;
+```
+
+### Check Device Tracking Coverage
+```sql
+SELECT 
+  COUNT(*) as total_records,
+  COUNT(DISTINCT user_id) as unique_users,
+  COUNT(DISTINCT device_id) as unique_devices,
+  COUNT(DISTINCT ip_address) as unique_ips
+FROM device_tracking;
+```
+
+### View Recent Ban Attempts
+```sql
+SELECT * FROM banned_access_attempts 
+ORDER BY attempted_at DESC 
+LIMIT 50;
+```
 
 ## Migration File
 Location: `supabase/migrations/007_ban_system.sql`
