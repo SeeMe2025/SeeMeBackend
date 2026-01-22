@@ -18,16 +18,21 @@ export default async function handler(
   try {
     // No authentication - privacy-first app
 
-    const { voiceId, text } = req.body
+    const { voiceId, text, userApiKey } = req.body
 
     if (!voiceId || !text) {
       return res.status(400).json({ error: 'voiceId and text are required' })
     }
 
-    // Get an active ElevenLabs API key
-    const apiKey = await elevenLabsKeyManager.getAvailableKey()
-    if (!apiKey) {
-      return res.status(503).json({ error: 'No ElevenLabs API keys available' })
+    // Use user's API key if provided, otherwise use shared pool
+    let apiKey: string
+    if (userApiKey && userApiKey.trim().length > 0) {
+      apiKey = userApiKey
+    } else {
+      apiKey = await elevenLabsKeyManager.getAvailableKey()
+      if (!apiKey) {
+        return res.status(503).json({ error: 'No ElevenLabs API keys available' })
+      }
     }
 
     // Request TTS from ElevenLabs
