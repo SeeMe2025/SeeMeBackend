@@ -27,6 +27,24 @@ export default async function handler(
     }
 
     const apiKey = userApiKey || process.env.OPENAI_API_KEY
+    if (!apiKey) {
+      console.error('❌ OPENAI_API_KEY environment variable not set and no userApiKey provided')
+      return res.status(500).json({ error: 'OpenAI API key not configured' })
+    }
+    
+    // Log which key source is being used
+    if (userApiKey) {
+      console.log('🔑 Using user-provided API key:', userApiKey.substring(0, 10) + '...')
+    } else {
+      console.log('🔑 Using environment API key:', process.env.OPENAI_API_KEY?.substring(0, 10) + '...')
+    }
+    
+    // Validate API key format
+    if (!apiKey.startsWith('sk-')) {
+      console.error('❌ Invalid API key format. Expected "sk-" but got:', apiKey.substring(0, 10) + '...')
+      return res.status(400).json({ error: 'Invalid API key format. API keys must start with "sk-"' })
+    }
+    
     const openai = new OpenAI({ apiKey })
 
     const ttsResponse = await openai.audio.speech.create({

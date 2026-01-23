@@ -16,7 +16,14 @@ export default async function handler(
       return res.status(400).json({ error: 'voiceId and text are required' })
     }
 
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+    const apiKey = process.env.OPENAI_API_KEY
+    if (!apiKey) {
+      console.error('❌ OPENAI_API_KEY environment variable not set')
+      return res.status(500).json({ error: 'OpenAI API key not configured' })
+    }
+    
+    console.log('🔑 Using OpenAI API key:', apiKey.substring(0, 10) + '...')
+    const openai = new OpenAI({ apiKey })
 
     const response = await openai.audio.speech.create({
       model: "gpt-4o-mini-tts",
