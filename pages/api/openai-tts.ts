@@ -11,6 +11,115 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+const DEFAULT_VOICE_LIMIT = 3 // Default voice limit per day
+
+async function checkAndIncrementVoiceLimit(
+  deviceId: string,
+  userId?: string
+): Promise<{ allowed: boolean; message?: string; limit?: number; usage?: number; resetAt?: string }> {
+  try {
+    // Get custom voice limit from user_limits if userId provided
+    let customVoiceLimit: number | null = null
+    if (userId) {
+      const { data: userLimit } = await supabase
+        .from('user_limits')
+        .select('custom_voice_limit')
+        .eq('user_id', userId)
+        .single()
+      
+      customVoiceLimit = userLimit?.custom_voice_limit || null
+    }
+
+    const voiceLimit = customVoiceLimit || DEFAULT_VOICE_LIMIT
+
+    // Fetch current usage
+    const { data: currentUsage, error: fetchError } = await supabase
+      .from('usage_limits')
+      .select('*')
+      .eq('device_id', deviceId)
+      .single()
+
+    // If no record exists, create one
+    if (fetchError || !currentUsage) {
+      const resetAt = new Date()
+      resetAt.setHours(24, 0, 0, 0)
+
+      const { error: insertError } = await supabase
+        .from('usage_limits')
+        .insert({
+          device_id: deviceId,
+          voice_sessions_count: 1,
+          text_sessions_count: 0,
+          has_elevenlabs_key: false,
+          reset_at: resetAt.toISOString()
+        })
+
+      if (insertError) throw insertError
+      return { allowed: true }
+    }
+
+    // Check if reset is needed
+    const now = new Date()
+    const resetAt = new Date(currentUsage.reset_at)
+
+    if (now >= resetAt) {
+      const newResetAt = new Date()
+      newResetAt.setHours(24, 0, 0, 0)
+
+      const { error: resetError } = await supabase
+        .from('usage_limits')
+        .update({
+          voice_sessions_count: 1,
+          text_sessions_count: 0,
+          reset_at: newResetAt.toISOString()
+        })
+        .eq('device_id', deviceId)
+
+      if (resetError) throw resetError
+      return { allowed: true }
+    }
+
+    // Users with ElevenLabs key bypass voice limit
+    if (currentUsage.has_elevenlabs_key) {
+      await supabase
+        .from('usage_limits')
+        .update({
+          voice_sessions_count: currentUsage.voice_sessions_count + 1
+        })
+        .eq('device_id', deviceId)
+
+      return { allowed: true }
+    }
+
+    // Check if limit reached
+    if (currentUsage.voice_sessions_count >= voiceLimit) {
+      return {
+        allowed: false,
+        message: `Voice limit of ${voiceLimit} messages per day reached. Resets at midnight.`,
+        limit: voiceLimit,
+        usage: currentUsage.voice_sessions_count,
+        resetAt: currentUsage.reset_at
+      }
+    }
+
+    // Increment voice count
+    const { error: updateError } = await supabase
+      .from('usage_limits')
+      .update({
+        voice_sessions_count: currentUsage.voice_sessions_count + 1
+      })
+      .eq('device_id', deviceId)
+
+    if (updateError) throw updateError
+
+    return { allowed: true }
+  } catch (error) {
+    console.error('Error checking voice rate limit:', error)
+    // On error, allow the request to proceed
+    return { allowed: true }
+  }
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -20,29 +129,32 @@ export default async function handler(
   }
 
   try {
-    const { voiceId, text, withTimestamps, settings, userApiKey } = req.body
+    const { voiceId, text, withTimestamps, settings, deviceId, userId } = req.body
 
     if (!voiceId || !text) {
       return res.status(400).json({ error: 'voiceId and text are required' })
     }
 
-    const apiKey = userApiKey || process.env.OPENAI_API_KEY
+    // Rate limiting: apply to all users if deviceId is provided
+    if (deviceId) {
+      const rateLimitResult = await checkAndIncrementVoiceLimit(deviceId, userId)
+      
+      if (!rateLimitResult.allowed) {
+        return res.status(429).json({ 
+          error: 'Voice limit reached',
+          message: rateLimitResult.message,
+          limit: rateLimitResult.limit,
+          usage: rateLimitResult.usage,
+          resetAt: rateLimitResult.resetAt
+        })
+      }
+    }
+
+    // Always use environment API key
+    const apiKey = process.env.OPENAI_API_KEY
     if (!apiKey) {
-      console.error('❌ OPENAI_API_KEY environment variable not set and no userApiKey provided')
+      console.error('❌ OPENAI_API_KEY environment variable not set')
       return res.status(500).json({ error: 'OpenAI API key not configured' })
-    }
-    
-    // Log which key source is being used
-    if (userApiKey) {
-      console.log('🔑 Using user-provided API key:', userApiKey.substring(0, 10) + '...')
-    } else {
-      console.log('🔑 Using environment API key:', process.env.OPENAI_API_KEY?.substring(0, 10) + '...')
-    }
-    
-    // Validate API key format
-    if (!apiKey.startsWith('sk-')) {
-      console.error('❌ Invalid API key format. Expected "sk-" but got:', apiKey.substring(0, 10) + '...')
-      return res.status(400).json({ error: 'Invalid API key format. API keys must start with "sk-"' })
     }
     
     const openai = new OpenAI({ apiKey })
@@ -84,9 +196,10 @@ export default async function handler(
       }
     }
 
+    // Log TTS usage
     try {
       await supabase.from('ai_interactions').insert({
-        user_id: 'anonymous',
+        user_id: userId || 'anonymous',
         provider: 'openai',
         model: 'gpt-4o-mini-tts',
         interaction_type: 'tts',
