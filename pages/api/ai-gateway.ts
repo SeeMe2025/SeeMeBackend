@@ -50,7 +50,6 @@ interface AIGatewayRequest {
     deviceId?: string
     isVoiceMode?: boolean | string
     hasTTS?: boolean | string
-    hasElevenLabsKey?: boolean | string
   }
 }
 
@@ -87,7 +86,6 @@ function getClientIP(req: NextApiRequest): string {
 async function checkAndIncrementRateLimit(
   deviceId: string,
   isVoiceMode: boolean,
-  hasElevenLabsKey: boolean,
   promptType?: string,
   userId?: string,
   clientIP?: string
@@ -256,7 +254,7 @@ async function checkAndIncrementRateLimit(
           device_id: deviceId,
           voice_sessions_count: 0,
           text_sessions_count: 0,
-          has_elevenlabs_key: hasElevenLabsKey,
+          has_elevenlabs_key: false,
           reset_at: resetAt.toISOString()
         })
         .select()
@@ -301,26 +299,15 @@ async function checkAndIncrementRateLimit(
 
     // Check voice mode rate limit
     if (isVoiceMode) {
-      // Users with ElevenLabs key bypass voice limit
-      if (hasElevenLabsKey) {
-        return { allowed: true }
-      }
-
-      if (currentUsage.voice_sessions_count >= VOICE_LIMIT) {
-        return {
-          allowed: false,
-          limitType: 'voice',
-          used: currentUsage.voice_sessions_count,
-          max: VOICE_LIMIT
-        }
-      }
-
-      // Increment voice count
+      // Voice mode uses OpenAI TTS now - /api/openai-tts handles its own rate limiting
+      // Just track voice usage here for dashboard stats, but don't enforce limits
+      // (The TTS endpoint checks custom_voice_limit from user_limits table)
+      console.log(`🎤 [ai-gateway] Voice mode request - allowing without limit check (TTS endpoint handles limits)`)
+      
       await supabase
         .from('usage_limits')
         .update({
-          voice_sessions_count: currentUsage.voice_sessions_count + 1,
-          has_elevenlabs_key: hasElevenLabsKey
+          voice_sessions_count: currentUsage.voice_sessions_count + 1
         })
         .eq('device_id', deviceId)
 
@@ -402,7 +389,6 @@ export default async function handler(
 
       // Parse boolean values (iOS sends as strings)
       const isVoiceMode = context.isVoiceMode === true || context.isVoiceMode === 'true' || context.hasTTS === true || context.hasTTS === 'true'
-      const hasElevenLabsKey = context.hasElevenLabsKey === true || context.hasElevenLabsKey === 'true'
 
       // Get client IP for IP-based banning
       const clientIP = getClientIP(req)
@@ -430,7 +416,6 @@ export default async function handler(
       const rateLimitResult = await checkAndIncrementRateLimit(
         deviceId,
         isVoiceMode,
-        hasElevenLabsKey,
         promptType,
         context.userId,
         clientIP
