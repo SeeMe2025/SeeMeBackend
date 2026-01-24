@@ -218,18 +218,25 @@ async function checkAndIncrementRateLimit(
   }
   
   try {
-    // Check if user is flagged with custom rate limit
-    let customLimit: number | null = null
+    // Check if user has custom rate limits
+    let customTextLimit: number | null = null
+    let customVoiceLimit: number | null = null
     if (userId) {
       const { data: userLimit } = await supabase
         .from('user_limits')
-        .select('is_flagged, custom_rate_limit')
+        .select('is_flagged, custom_rate_limit, custom_voice_limit')
         .eq('user_id', userId)
         .single()
       
-      if (userLimit && userLimit.custom_rate_limit !== null) {
-        customLimit = userLimit.custom_rate_limit
-        console.log(`⚙️ User ${userId} has custom limit: ${customLimit}`)
+      if (userLimit) {
+        if (userLimit.custom_rate_limit !== null) {
+          customTextLimit = userLimit.custom_rate_limit
+          console.log(`⚙️ User ${userId} has custom text limit: ${customTextLimit}`)
+        }
+        if (userLimit.custom_voice_limit !== null) {
+          customVoiceLimit = userLimit.custom_voice_limit
+          console.log(`⚙️ User ${userId} has custom voice limit: ${customVoiceLimit}`)
+        }
       }
     }
     
@@ -299,11 +306,20 @@ async function checkAndIncrementRateLimit(
 
     // Check voice mode rate limit
     if (isVoiceMode) {
-      // Voice mode uses OpenAI TTS now - /api/openai-tts handles its own rate limiting
-      // Just track voice usage here for dashboard stats, but don't enforce limits
-      // (The TTS endpoint checks custom_voice_limit from user_limits table)
-      console.log(`🎤 [ai-gateway] Voice mode request - allowing without limit check (TTS endpoint handles limits)`)
+      // Check voice limit (use custom limit if set, otherwise default)
+      const effectiveVoiceLimit = customVoiceLimit !== null ? customVoiceLimit : VOICE_LIMIT
       
+      if (currentUsage.voice_sessions_count >= effectiveVoiceLimit) {
+        console.log(`⚠️ Voice limit reached: ${currentUsage.voice_sessions_count}/${effectiveVoiceLimit}`)
+        return {
+          allowed: false,
+          limitType: 'voice',
+          used: currentUsage.voice_sessions_count,
+          max: effectiveVoiceLimit
+        }
+      }
+
+      // Increment voice count
       await supabase
         .from('usage_limits')
         .update({
@@ -311,10 +327,11 @@ async function checkAndIncrementRateLimit(
         })
         .eq('device_id', deviceId)
 
+      console.log(`✅ Voice request allowed: ${currentUsage.voice_sessions_count + 1}/${effectiveVoiceLimit}`)
       return { allowed: true }
     } else {
-      // Check text mode rate limit (use custom limit for flagged users)
-      const effectiveLimit = customLimit !== null ? customLimit : TEXT_LIMIT
+      // Check text mode rate limit (use custom limit if set, otherwise default)
+      const effectiveLimit = customTextLimit !== null ? customTextLimit : TEXT_LIMIT
       
       if (currentUsage.text_sessions_count >= effectiveLimit) {
         return {
