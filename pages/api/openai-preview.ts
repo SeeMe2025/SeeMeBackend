@@ -120,15 +120,32 @@ export default async function handler(
   try {
     const { voiceId, text, deviceId, userId } = req.body
 
+    console.log('🔊 [OpenAI Preview] Request received:', {
+      voiceId,
+      textLength: text?.length || 0,
+      hasDeviceId: !!deviceId,
+      hasUserId: !!userId,
+      deviceId: deviceId ? deviceId.substring(0, 8) + '...' : 'none',
+      userId: userId ? userId.substring(0, 8) + '...' : 'none'
+    })
+
     if (!voiceId || !text) {
+      console.error('❌ [OpenAI Preview] Missing required fields:', { voiceId: !!voiceId, text: !!text })
       return res.status(400).json({ error: 'voiceId and text are required' })
     }
 
     // Rate limiting: apply to all users if deviceId is provided
     if (deviceId) {
+      console.log('🔒 [OpenAI Preview] Checking rate limit for device:', deviceId.substring(0, 8) + '...')
       const rateLimitResult = await checkAndIncrementVoiceLimit(deviceId, userId)
       
       if (!rateLimitResult.allowed) {
+        console.warn('⚠️ [OpenAI Preview] Rate limit exceeded:', {
+          deviceId: deviceId.substring(0, 8) + '...',
+          limit: rateLimitResult.limit,
+          usage: rateLimitResult.usage,
+          resetAt: rateLimitResult.resetAt
+        })
         return res.status(429).json({ 
           error: 'Voice limit reached',
           message: rateLimitResult.message,
@@ -137,6 +154,9 @@ export default async function handler(
           resetAt: rateLimitResult.resetAt
         })
       }
+      console.log('✅ [OpenAI Preview] Rate limit check passed')
+    } else {
+      console.warn('⚠️ [OpenAI Preview] No deviceId provided - skipping rate limit')
     }
 
     // Always use environment API key
@@ -148,6 +168,7 @@ export default async function handler(
     
     const openai = new OpenAI({ apiKey })
 
+    console.log('🎵 [OpenAI Preview] Generating preview audio:', { voiceId })
     const response = await openai.audio.speech.create({
       model: "gpt-4o-mini-tts",
       voice: voiceId,
@@ -156,11 +177,16 @@ export default async function handler(
     })
 
     const audioBuffer = Buffer.from(await response.arrayBuffer())
+    console.log('✅ [OpenAI Preview] Audio generated:', { sizeKB: (audioBuffer.length / 1024).toFixed(2) })
 
+    console.log('✅ [OpenAI Preview] Request completed successfully')
     res.setHeader('Content-Type', 'audio/mpeg')
     res.send(audioBuffer)
   } catch (error: any) {
-    console.error('Error generating OpenAI voice preview:', error)
+    console.error('❌ [OpenAI Preview] Error:', {
+      message: error.message,
+      stack: error.stack?.split('\n').slice(0, 3).join('\n')
+    })
     res.status(500).json({ error: error.message })
   }
 }

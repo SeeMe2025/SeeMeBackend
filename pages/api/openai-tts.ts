@@ -131,15 +131,34 @@ export default async function handler(
   try {
     const { voiceId, text, withTimestamps, settings, deviceId, userId } = req.body
 
+    console.log('🎤 [OpenAI TTS] Request received:', {
+      voiceId,
+      textLength: text?.length || 0,
+      withTimestamps,
+      speed: settings?.speed || 1.0,
+      hasDeviceId: !!deviceId,
+      hasUserId: !!userId,
+      deviceId: deviceId ? deviceId.substring(0, 8) + '...' : 'none',
+      userId: userId ? userId.substring(0, 8) + '...' : 'none'
+    })
+
     if (!voiceId || !text) {
+      console.error('❌ [OpenAI TTS] Missing required fields:', { voiceId: !!voiceId, text: !!text })
       return res.status(400).json({ error: 'voiceId and text are required' })
     }
 
     // Rate limiting: apply to all users if deviceId is provided
     if (deviceId) {
+      console.log('🔒 [OpenAI TTS] Checking rate limit for device:', deviceId.substring(0, 8) + '...')
       const rateLimitResult = await checkAndIncrementVoiceLimit(deviceId, userId)
       
       if (!rateLimitResult.allowed) {
+        console.warn('⚠️ [OpenAI TTS] Rate limit exceeded:', {
+          deviceId: deviceId.substring(0, 8) + '...',
+          limit: rateLimitResult.limit,
+          usage: rateLimitResult.usage,
+          resetAt: rateLimitResult.resetAt
+        })
         return res.status(429).json({ 
           error: 'Voice limit reached',
           message: rateLimitResult.message,
@@ -148,6 +167,9 @@ export default async function handler(
           resetAt: rateLimitResult.resetAt
         })
       }
+      console.log('✅ [OpenAI TTS] Rate limit check passed')
+    } else {
+      console.warn('⚠️ [OpenAI TTS] No deviceId provided - skipping rate limit')
     }
 
     // Always use environment API key
@@ -159,6 +181,7 @@ export default async function handler(
     
     const openai = new OpenAI({ apiKey })
 
+    console.log('🎵 [OpenAI TTS] Generating audio:', { voiceId, speed: settings?.speed || 1.0 })
     const ttsResponse = await openai.audio.speech.create({
       model: "gpt-4o-mini-tts",
       voice: voiceId,
@@ -169,10 +192,12 @@ export default async function handler(
 
     const audioBuffer = Buffer.from(await ttsResponse.arrayBuffer())
     const audio_base64 = audioBuffer.toString('base64')
+    console.log('✅ [OpenAI TTS] Audio generated:', { sizeKB: (audioBuffer.length / 1024).toFixed(2) })
 
     let alignment = null
 
     if (withTimestamps) {
+      console.log('📝 [OpenAI TTS] Generating word timestamps with Whisper...')
       const tempFile = path.join('/tmp', `tts-${randomUUID()}.mp3`)
       await writeFile(tempFile, audioBuffer)
 
@@ -191,6 +216,7 @@ export default async function handler(
             end: w.end
           })) || []
         }
+        console.log('✅ [OpenAI TTS] Timestamps generated:', { wordCount: alignment.words.length })
       } finally {
         await unlink(tempFile).catch(() => {})
       }
@@ -213,13 +239,17 @@ export default async function handler(
       console.error('Failed to log TTS usage:', logError)
     }
 
+    console.log('✅ [OpenAI TTS] Request completed successfully')
     res.setHeader('Content-Type', 'application/json')
     res.json({
       audio_base64,
       alignment
     })
   } catch (error: any) {
-    console.error('Error generating OpenAI TTS:', error)
+    console.error('❌ [OpenAI TTS] Error:', {
+      message: error.message,
+      stack: error.stack?.split('\n').slice(0, 3).join('\n')
+    })
     res.status(500).json({ error: error.message })
   }
 }
