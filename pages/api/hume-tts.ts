@@ -191,7 +191,7 @@ export default async function handler(
 
     console.log('🎵 [Hume TTS] Generating audio with Hume:', { voiceId })
 
-    // Call Hume TTS API
+    // Call Hume TTS API - uses utterances array format
     const humeResponse = await fetch('https://api.hume.ai/v0/tts', {
       method: 'POST',
       headers: {
@@ -199,9 +199,17 @@ export default async function handler(
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        voice: voiceId,
-        text: text,
-        format: 'mp3'
+        utterances: [
+          {
+            text: text,
+            voice: {
+              name: voiceId
+            }
+          }
+        ],
+        format: {
+          type: 'mp3'
+        }
       })
     })
 
