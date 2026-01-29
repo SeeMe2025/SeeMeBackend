@@ -53,9 +53,28 @@ interface AIGatewayRequest {
   }
 }
 
-// Rate limiting constants
-const VOICE_LIMIT = 3
-const TEXT_LIMIT = 20
+// Rate limiting defaults (will be overridden by database values)
+const DEFAULT_VOICE_LIMIT = 3
+const DEFAULT_TEXT_LIMIT = 100
+
+// Helper to fetch global settings from database
+async function getGlobalLimits(): Promise<{ voiceLimit: number; textLimit: number }> {
+  try {
+    const { data } = await supabase
+      .from('global_settings')
+      .select('key, value')
+      .in('key', ['default_text_limit', 'default_voice_limit'])
+
+    const settingsMap = new Map(data?.map(s => [s.key, parseInt(s.value)]) || [])
+    return {
+      textLimit: settingsMap.get('default_text_limit') || DEFAULT_TEXT_LIMIT,
+      voiceLimit: settingsMap.get('default_voice_limit') || DEFAULT_VOICE_LIMIT
+    }
+  } catch (error) {
+    console.error('Failed to fetch global limits:', error)
+    return { voiceLimit: DEFAULT_VOICE_LIMIT, textLimit: DEFAULT_TEXT_LIMIT }
+  }
+}
 
 // Hardcoded banned users/devices list - KEEP THIS for active threats
 const BANNED_DEVICES: string[] = [
@@ -90,6 +109,9 @@ async function checkAndIncrementRateLimit(
   userId?: string,
   clientIP?: string
 ): Promise<{ allowed: boolean; limitType?: 'voice' | 'text'; used?: number; max?: number; banned?: boolean }> {
+  // Fetch global limits from database
+  const { voiceLimit: VOICE_LIMIT, textLimit: TEXT_LIMIT } = await getGlobalLimits()
+
   // Check hardcoded IP bans (for active threats)
   if (clientIP && BANNED_IPS.includes(clientIP)) {
     console.log(`🚫 Banned IP attempted access (hardcoded): ${clientIP}`)

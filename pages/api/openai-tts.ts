@@ -11,13 +11,30 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-const DEFAULT_VOICE_LIMIT = 3 // Default voice limit per day
+const DEFAULT_VOICE_LIMIT = 3 // Fallback voice limit per day
+
+// Helper to fetch global voice limit from database
+async function getGlobalVoiceLimit(): Promise<number> {
+  try {
+    const { data } = await supabase
+      .from('global_settings')
+      .select('value')
+      .eq('key', 'default_voice_limit')
+      .single()
+    return data ? parseInt(data.value) : DEFAULT_VOICE_LIMIT
+  } catch {
+    return DEFAULT_VOICE_LIMIT
+  }
+}
 
 async function checkAndIncrementVoiceLimit(
   deviceId: string,
   userId?: string
 ): Promise<{ allowed: boolean; message?: string; limit?: number; usage?: number; resetAt?: string }> {
   try {
+    // Get global voice limit from database
+    const globalVoiceLimit = await getGlobalVoiceLimit()
+
     // Get custom voice limit from user_limits if userId provided
     let customVoiceLimit: number | null = null
     if (userId) {
@@ -26,11 +43,11 @@ async function checkAndIncrementVoiceLimit(
         .select('custom_voice_limit')
         .eq('user_id', userId)
         .single()
-      
+
       customVoiceLimit = userLimit?.custom_voice_limit || null
     }
 
-    const voiceLimit = customVoiceLimit || DEFAULT_VOICE_LIMIT
+    const voiceLimit = customVoiceLimit || globalVoiceLimit
 
     // Fetch current usage
     const { data: currentUsage, error: fetchError } = await supabase
