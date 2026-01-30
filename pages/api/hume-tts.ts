@@ -203,7 +203,7 @@ export default async function handler(
           {
             text: text,
             voice: {
-              name: voiceId
+              id: voiceId
             }
           }
         ],
