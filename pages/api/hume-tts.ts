@@ -231,10 +231,21 @@ export default async function handler(
     // Parse the response - Octave 2 returns JSON with audio and timestamps
     const humeData = await humeResponse.json()
 
+    // Debug: Log the full response structure from Hume
+    console.log('🔍 [Hume TTS] Raw response keys:', Object.keys(humeData))
+    console.log('🔍 [Hume TTS] Full response structure:', JSON.stringify(humeData, (key, value) => {
+      // Truncate audio data for logging
+      if (key === 'audio' && typeof value === 'string' && value.length > 100) {
+        return value.substring(0, 100) + '...[truncated]'
+      }
+      return value
+    }, 2))
+
     // Extract audio from generations array
     let audio_base64 = ''
     if (humeData.generations && humeData.generations.length > 0) {
       audio_base64 = humeData.generations[0].audio || ''
+      console.log('🔍 [Hume TTS] Generation keys:', Object.keys(humeData.generations[0]))
     }
 
     // Timestamps are at the top level of the response, pass through as-is
@@ -242,7 +253,9 @@ export default async function handler(
 
     console.log('✅ [Hume TTS] Audio generated:', {
       audioLength: audio_base64.length,
-      timestampCount: timestamps.length
+      timestampCount: timestamps.length,
+      hasTopLevelTimestamps: !!humeData.timestamps,
+      sampleTimestamp: timestamps.length > 0 ? timestamps[0] : null
     })
 
     // Log TTS usage
