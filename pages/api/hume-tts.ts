@@ -191,7 +191,7 @@ export default async function handler(
 
     console.log('🎵 [Hume TTS] Generating audio with Hume:', { voiceId })
 
-    // Call Hume TTS API - uses utterances array format
+    // Call Hume TTS API - uses utterances array format with Octave 2 for timestamp support
     const humeResponse = await fetch('https://api.hume.ai/v0/tts', {
       method: 'POST',
       headers: {
@@ -199,6 +199,8 @@ export default async function handler(
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
+        version: '2',
+        include_timestamp_types: ['word'],
         utterances: [
           {
             text: text,
@@ -226,11 +228,36 @@ export default async function handler(
       })
     }
 
-    // Convert audio to base64
-    const audioBuffer = Buffer.from(await humeResponse.arrayBuffer())
-    const audio_base64 = audioBuffer.toString('base64')
+    // Parse the response - Octave 2 returns JSON with audio and timestamps
+    const humeData = await humeResponse.json()
 
-    console.log('✅ [Hume TTS] Audio generated:', { sizeKB: (audioBuffer.length / 1024).toFixed(2) })
+    // Extract audio data (base64 encoded in the response)
+    let audio_base64 = ''
+    const timestamps: Array<{ text: string; begin: number; end: number }> = []
+
+    // Process the response to extract audio and timestamps
+    if (humeData.generations && humeData.generations.length > 0) {
+      const generation = humeData.generations[0]
+      audio_base64 = generation.audio || ''
+
+      // Extract word timestamps from the response
+      if (generation.timestamps) {
+        for (const ts of generation.timestamps) {
+          if (ts.type === 'word') {
+            timestamps.push({
+              text: ts.text,
+              begin: ts.time?.begin || 0,
+              end: ts.time?.end || 0
+            })
+          }
+        }
+      }
+    }
+
+    console.log('✅ [Hume TTS] Audio generated:', {
+      audioLength: audio_base64.length,
+      timestampCount: timestamps.length
+    })
 
     // Log TTS usage
     try {
@@ -251,7 +278,7 @@ export default async function handler(
 
     console.log('✅ [Hume TTS] Request completed successfully')
     res.setHeader('Content-Type', 'application/json')
-    res.json({ audio_base64 })
+    res.json({ audio_base64, timestamps })
   } catch (error: any) {
     console.error('❌ [Hume TTS] Error:', {
       message: error.message,
