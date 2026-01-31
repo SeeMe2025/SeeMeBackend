@@ -231,28 +231,14 @@ export default async function handler(
     // Parse the response - Octave 2 returns JSON with audio and timestamps
     const humeData = await humeResponse.json()
 
-    // Extract audio data (base64 encoded in the response)
+    // Extract audio from generations array
     let audio_base64 = ''
-    const timestamps: Array<{ text: string; begin: number; end: number }> = []
-
-    // Process the response to extract audio and timestamps
     if (humeData.generations && humeData.generations.length > 0) {
-      const generation = humeData.generations[0]
-      audio_base64 = generation.audio || ''
-
-      // Extract word timestamps from the response
-      if (generation.timestamps) {
-        for (const ts of generation.timestamps) {
-          if (ts.type === 'word') {
-            timestamps.push({
-              text: ts.text,
-              begin: ts.time?.begin || 0,
-              end: ts.time?.end || 0
-            })
-          }
-        }
-      }
+      audio_base64 = humeData.generations[0].audio || ''
     }
+
+    // Timestamps are at the top level of the response, pass through as-is
+    const timestamps = humeData.timestamps || []
 
     console.log('✅ [Hume TTS] Audio generated:', {
       audioLength: audio_base64.length,
