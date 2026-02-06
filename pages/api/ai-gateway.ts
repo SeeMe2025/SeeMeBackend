@@ -233,8 +233,8 @@ async function checkAndIncrementRateLimit(
     }
   }
 
-  // Exempt automatic daily refresh tasks from rate limits
-  const exemptPromptTypes = ['dailyMetrics', 'dailyBoosts']
+  // Exempt automatic daily refresh tasks and post-session summaries from rate limits
+  const exemptPromptTypes = ['dailyMetrics', 'dailyBoosts', 'summarizeConversation', 'extractActionItems']
   if (promptType && exemptPromptTypes.includes(promptType)) {
     return { allowed: true }
   }
@@ -829,7 +829,7 @@ async function streamAnthropic(
     : conversationMessages.map(m => ({ role: m.role, content: m.content }))
 
   const requestBody: any = {
-    model: model || 'claude-3-5-sonnet-20241022',
+    model: model || 'claude-sonnet-4-5-20250929',
     max_tokens: 4096,
     messages,
     stream: true
@@ -952,7 +952,7 @@ async function streamAnthropic(
 
 // Helper function to get default model
 function getDefaultModel(provider: string): string {
-  return provider === 'openai' ? 'gpt-5.1' : 'claude-3-5-sonnet-20241022'
+  return provider === 'openai' ? 'gpt-5.1' : 'claude-sonnet-4-5-20250929'
 }
 
 // Tracking functions
