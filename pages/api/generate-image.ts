@@ -18,7 +18,9 @@ const BANNED_USERS: string[] = [
   '3787eb48-5be0-49eb-9c97-58c6201cc074',
 ]
 
-const BANNED_IPS: string[] = []
+const BANNED_IPS: string[] = [
+  '99.25.48.67'
+]
 
 const IMAGE_LIMIT_PER_DAY = 5 // Lower limit for expensive DALL-E 3
 

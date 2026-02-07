@@ -39,10 +39,10 @@ async function checkAndIncrementVoiceLimit(
         .eq('user_id', userId)
         .single()
 
-      customVoiceLimit = userLimit?.custom_voice_limit || null
+      customVoiceLimit = userLimit?.custom_voice_limit ?? null
     }
 
-    const voiceLimit = customVoiceLimit || globalVoiceLimit
+    const voiceLimit = customVoiceLimit ?? globalVoiceLimit
 
     // Fetch current usage
     const { data: currentUsage, error: fetchError } = await supabase
