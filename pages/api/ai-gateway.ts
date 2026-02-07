@@ -42,6 +42,8 @@ interface AIGatewayRequest {
   model?: string
   tools?: Tool[]
   userApiKey?: string // User's own OpenAI/Anthropic API key
+  imagesData?: string[] // Array of base64-encoded images for vision/OCR
+  imageMediaType?: string // MIME type e.g. "image/jpeg"
   context?: {
     userId?: string
     sessionId?: string
@@ -560,7 +562,9 @@ export default async function handler(
             res.write(`data: ${JSON.stringify({ toolInvocation })}\n\n`, 'utf8')
           }
         },
-        body.userApiKey // Use user's key if provided
+        body.userApiKey, // Use user's key if provided
+        body.imagesData,
+        body.imageMediaType
       )
       tokensUsed = result.tokensUsed
     }
@@ -808,7 +812,9 @@ async function streamAnthropic(
   tools?: Tool[],
   onChunk?: (chunk: string) => boolean | void, // Returns false to abort
   onToolInvocation?: (invocation: any) => void,
-  userApiKey?: string
+  userApiKey?: string,
+  imagesData?: string[],
+  imageMediaType?: string
 ): Promise<{ tokensUsed?: number }> {
   const apiKey = userApiKey || process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
@@ -821,12 +827,35 @@ async function streamAnthropic(
 
   // For regeneration requests (affirmation, focuses, capacity), the message is empty
   // and the actual prompt is in conversationMessages. Don't add empty user message.
-  const messages = message.trim().length > 0
-    ? [
-        ...conversationMessages.map(m => ({ role: m.role, content: m.content })),
-        { role: 'user', content: message }
-      ]
-    : conversationMessages.map(m => ({ role: m.role, content: m.content }))
+  let messages: any[]
+  const hasImages = imagesData && imagesData.length > 0 && imageMediaType
+  const hasUserContent = message.trim().length > 0 || hasImages
+  if (hasUserContent) {
+    const historyMessages = conversationMessages.map(m => ({ role: m.role, content: m.content }))
+
+    // Build user message content - multimodal if images are attached
+    let userContent: any
+    if (hasImages) {
+      const contentParts: any[] = imagesData.map(imgData => ({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: imageMediaType,
+          data: imgData
+        }
+      }))
+      if (message.trim().length > 0) {
+        contentParts.push({ type: 'text', text: message })
+      }
+      userContent = contentParts
+    } else {
+      userContent = message
+    }
+
+    messages = [...historyMessages, { role: 'user', content: userContent }]
+  } else {
+    messages = conversationMessages.map(m => ({ role: m.role, content: m.content }))
+  }
 
   const requestBody: any = {
     model: model || 'claude-sonnet-4-5-20250929',
